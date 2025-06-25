@@ -22,26 +22,20 @@ A fully functional backend system built with **Node.js**, **Express**, and **Mon
 ### 1. Clone the repository
 
 ```bash
-
 git clone https://github.com/kirtanmandaviya/VIDTUBE.git
 cd VIDTUBE
-
 ```
 
 ### 2. install dependencies:
 
 ```bash
-
 npm install
-
 ```
 
 ### 3. start the server:
 
 ```bash
-
 npm run dev
-
 ```
 
 ---
