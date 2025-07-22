@@ -18,8 +18,10 @@ app.use(cookieParser())
 
 import userRouter from './routes/user.routes.js';
 import supervisorRouter from './routes/supervisor.routes.js';
+import adminRouter from './routes/admin.routes.js'
 
 app.use("/api/o1/user", userRouter);
 app.use("/api/o1/supervisor", supervisorRouter);
+app.use("/api/o1/admin", adminRouter); 
 
 export { app }

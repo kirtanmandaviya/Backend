@@ -65,8 +65,8 @@ const registerUser = asyncHandler( async ( req, res ) => {
 const loginUser = asyncHandler( async ( req, res ) => {
     const { email, userName, password } = req.body
 
-    if(!email){
-        throw new ApiError(400, "Email is required")
+    if( !email || !userName || !password ){
+        throw new ApiError(400, "All creditials required!")
     }
 
     const user = await User.findOne({

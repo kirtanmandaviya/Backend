@@ -43,7 +43,15 @@ const supervisorSchema = new Schema(
         department:[{
             type :Schema.Types.ObjectId,
             ref:"Department"
-        }] 
+        }],
+        refreshToken: {
+            type: String
+        },
+        permissions: {
+            type: [String],
+            enum: ["closeComplaint", "escalateComplaint", "viewAssignedComplaints"], 
+            default: []
+        }
     },
     { timestamps: true }
 )

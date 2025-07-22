@@ -12,10 +12,17 @@ import jwt from "jsonwebtoken";
 
 const adminSchema = new Schema (
     {
-        name: {
+        fullName: {
             type : String,
             required: true,
             lowercase: true,
+            trim: true
+        },
+        userName:{
+            type: String,
+            required: true,
+            lowercase: true,
+            index: true,
             trim: true
         },
         email: {
@@ -34,7 +41,10 @@ const adminSchema = new Schema (
             type: [String],
             enum: ["manageUsers", "assignComplaints", "viewAllComplaints"],
             default: ["assignComplaints"]
-        }]
+        }],
+        refreshToken : {
+            type: String
+        }
     },
     { timestamps: true }
 )
@@ -54,7 +64,7 @@ adminSchema.methods.isPasswordCorrect = async function (password) {
 adminSchema.methods.generateAccessToken = function () {
     return jwt.sign({
         _id: this._id,
-        name: this.name,
+        name: this.userName,
         email : this.email
     },
     process.env.ACCESS_TOKEN_SECRET,
@@ -62,7 +72,7 @@ adminSchema.methods.generateAccessToken = function () {
     );
 }
 
-adminSchema.methods.generateRefreshToken = async function () {
+adminSchema.methods.generateRefreshToken =  function () {
     return jwt.sign({
         _id : this._id
     },

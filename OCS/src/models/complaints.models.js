@@ -36,10 +36,10 @@ const complaintSchema = new Schema(
             lowercase: true,
             trim: true
         },
-        submittedBy:[{
+        submittedBy:{
             type: Schema.Types.ObjectId,
             ref: "User"
-        }],
+        },
         status: {
             type: String,
             enum: ["pending", "in-review", "resolved", "rejected"],
@@ -51,9 +51,9 @@ const complaintSchema = new Schema(
             type: Boolean,
             default: false
         },
-        attachments: {
+        attachments: [{
             type : String
-        },
+        }],
         department: {
             type: String,
             required: true,
@@ -64,7 +64,8 @@ const complaintSchema = new Schema(
             type: Schema.Types.ObjectId,
             ref: "Supervisor"
         }]
-    }
+    },
+    { timestamps: true }
 )
 
 export const Complaint = mongoose.model("Complaint", complaintSchema)
