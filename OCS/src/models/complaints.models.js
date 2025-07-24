@@ -14,19 +14,18 @@
 //  }
 
 import mongoose, { Schema } from "mongoose";
+import { type } from "os";
 
 const complaintSchema = new Schema(
     {
         title:{
             type: String,
             required: true,
-            lowercase: true,
             trim: true
         },
         description: {
             type: String,
             required: true,
-            lowercase: true,
             trim: true
         },
         category: {
@@ -51,9 +50,14 @@ const complaintSchema = new Schema(
             type: Boolean,
             default: false
         },
-        attachments: [{
-            type : String
-        }],
+        image:{
+            url : { type : String },
+            public_id: { type: String }
+        },
+        video:{
+            url: { type : String },
+            public_id: { type: String }
+        },
         department: {
             type: String,
             required: true,
@@ -63,7 +67,11 @@ const complaintSchema = new Schema(
         assignedToSupervisor:[{
             type: Schema.Types.ObjectId,
             ref: "Supervisor"
-        }]
+        }],
+        isDeleted: {
+            type: Boolean,
+            default: false
+        }
     },
     { timestamps: true }
 )

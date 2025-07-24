@@ -1,0 +1,214 @@
+import { Complaint } from '../models/complaints.models.js'
+import { asyncHandler } from '../utils/asyncHandler.js'
+import { ApiError } from '../utils/ApiError.js'
+import { ApiResponse } from '../utils/ApiResponse.js'
+import { Supervisor } from '../models/supervisor.models.js'
+import { Admin } from '../models/admin.models.js'
+import { User } from '../models/user.models.js'
+import { uploadOnCloudinary, deleteFromCloudinary, cloudinary } from '../utils/cloudinary.js'
+import mongoose from 'mongoose'
+
+
+// create Complaint,
+// get all Complaint,
+// get one Complaint,
+// get complaint by User,
+//Update Complaint Status,
+//Assign Complaint to Supervisors,
+//Soft Delete Complaint,
+//Anonymous Complaints View (for admins),
+//Filter Complaints (Supervisor Dashboard)
+//getAssignedSupervisors 
+
+
+const createComplaint = asyncHandler( async ( req, res ) => {
+
+    const {
+        title,
+        description,
+        category,
+        department,
+        isAnonymous
+    } = req.body
+
+    if( !title || !description || !category || !department ){
+        throw new ApiError(401, " All details are required! ")
+    }
+
+    const submittedBy = req.user?._id
+
+    if ( !submittedBy ) {
+        throw new ApiError(401, "Unauthorized")
+    }
+
+    const imageLocalPath = req.files?.image?.[0]?.path;
+    console.log("imageLocalPath:", imageLocalPath)
+
+    let image;
+
+    if(imageLocalPath){
+        try {
+            image = await uploadOnCloudinary(imageLocalPath)
+            console.log("Uploaded image", image)
+        } catch (error) {
+            console.log("Error uploading image", error)
+            throw new ApiError(500, "Failed to upload image")
+        }
+    }
+
+    const videoLocalPath = req.files?.video?.[0]?.path
+    console.log("videoLocalPath", videoLocalPath)
+
+    let video;
+
+    if(videoLocalPath){
+        try {
+            video = await uploadOnCloudinary(videoLocalPath)
+            console.log("video uploaded", video)
+        } catch (error) {
+            console.log("Error uploading video", error)
+            throw new ApiError(500, "Failed to upload a video")
+        }
+    }
+
+    try {
+        const complaint = await Complaint.create(
+            {
+                title,
+                description,
+                category,
+                isAnonymous: isAnonymous ?? false, 
+                image: {
+                    url:image?.url,
+                    public_id: image?.public_id
+                },
+                department,
+                video:{
+                    url: video?.url,
+                    public_id: video?.public_id
+                },
+                submittedBy
+   
+            }
+        )
+
+        return res
+            .status(201)
+            .json(
+                new ApiResponse(
+                    201,
+                    complaint,
+                    "Complaint created successfully"
+                )
+            )
+    }
+    catch (error) {
+        if( video?.public_id ){
+            await deleteFromCloudinary(video.public_id)
+        }
+
+        if( image?.public_id ){
+            await deleteFromCloudinary(image.public_id)
+        }
+
+        throw new ApiError(500, "Something went wrong while creating a complaint!")
+    }
+})
+
+const getAllComplaint = asyncHandler( async ( req, res ) => {
+
+    try {
+        
+        const { department, category } = req.query;
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+        const skip = ( page - 1 ) * limit;
+
+        const filter = {
+            category,
+            department
+        };
+
+       
+
+        const complaints = await Complaint.find(filter)
+            .skip(skip)
+            .limit(limit)
+            .populate("submittedBy", " name email")
+            .populate("department", "name")
+            .sort( { createdAt : -1 } );
+
+        const total = await Complaint.countDocuments(filter)
+
+        const sanitized = complaints.map(c => {
+            const obj = c.toObject();
+            if(obj.isAnonymous) delete obj.submittedBy;
+            return obj;
+        })
+
+        return res
+            .status(201)
+            .json(
+                new ApiResponse(
+                    201,
+                    {
+                        complaints: sanitized,
+                        total,
+                        page,
+                        total_pages : Math.ceil(total / limit)
+                    },
+                    "Complaints fetched successfully"
+                )
+            )
+    } catch (error) {
+        throw new ApiError(500, "Failed to fetched complaints!")
+    }
+
+})
+
+const getComplaintById = asyncHandler( async( req, res) => {
+
+    const { complaintId } = req.params
+
+    if( !complaintId ){
+        throw new ApiError(400, "Complaint ID is not provided!")
+    }
+
+    if( !mongoose.Types.ObjectId.isValid(complaintId) ){
+        throw new ApiError(400, "Invalid complaint ID!")
+    }
+
+    const complaint = await Complaint.findById(complaintId) 
+        .populate("submittedBy", "email name")
+        .populate("department", "name")
+
+    if( !complaint ){
+        throw new ApiError(404, "Complaint not found!")
+    }
+
+    const obj = complaint.toObject()
+
+    if(obj.isAnonymous) {
+        delete obj.submittedBy
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                obj,
+                "Complaint fetched successfully"
+            )
+        )
+})
+
+const getComplaintByUser = asyncHandler( async( req, res ) => {
+    
+})
+
+export {
+    createComplaint,
+    getAllComplaint,
+    getComplaintById
+}

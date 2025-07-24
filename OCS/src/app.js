@@ -18,10 +18,12 @@ app.use(cookieParser())
 
 import userRouter from './routes/user.routes.js';
 import supervisorRouter from './routes/supervisor.routes.js';
-import adminRouter from './routes/admin.routes.js'
+import adminRouter from './routes/admin.routes.js';
+import complaintRouter from './routes/complaints.routes.js'
 
 app.use("/api/o1/user", userRouter);
 app.use("/api/o1/supervisor", supervisorRouter);
 app.use("/api/o1/admin", adminRouter); 
+app.use("/api/o1/complaint", complaintRouter)
 
 export { app }

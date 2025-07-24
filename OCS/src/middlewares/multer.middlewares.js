@@ -3,7 +3,7 @@ import path from 'path';
 
 const uploadDir = path.resolve('./public/temp');
 
-multer.diskStorage({
+const storage = multer.diskStorage({
     destination: function( req, file, cb ){
         cb(null, uploadDir)
     },
