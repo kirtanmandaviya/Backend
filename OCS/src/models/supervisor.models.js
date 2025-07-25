@@ -73,7 +73,8 @@ supervisorSchema.methods.generateAccessToken =  function () {
     return jwt.sign({
         _id : this._id,
         email: this.email,
-        name: this.userName
+        name: this.userName,
+        role: "supervisor"
     },
     process.env.ACCESS_TOKEN_SECRET,
     { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }

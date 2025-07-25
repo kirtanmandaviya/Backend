@@ -205,10 +205,114 @@ const getComplaintById = asyncHandler( async( req, res) => {
 
 const getComplaintByUser = asyncHandler( async( req, res ) => {
     
+    const userId = req.user?._id;
+
+    if( !userId ){
+        throw new ApiError(401, "User ID is required!")
+    }
+
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = ( page - 1 )* limit;
+
+    try {
+        
+        const complaint = await Complaint.find( { submittedBy: userId } )
+            .skip(skip)
+            .limit(page)
+            .populate( "department", "name")
+            .sort( { createdAt: -1 } )
+
+        const total = await Complaint.countDocuments( { submittedBy: userId } )
+
+        const sanitized = complaint.map(c => {
+            const obj = c.toObject();
+            if( obj.isAnonymous ) delete obj.submittedBy
+            return obj;
+        })
+
+        return res
+            .status(201)
+            .json(
+                new ApiResponse(
+                    201,
+                    {
+                        complaint: sanitized,
+                        total
+                    },
+                    "Complaints fetched successfully"
+                )
+            )
+
+    } catch (error) {
+        console.log("Error:", error.message)
+        throw new ApiError(500, "Something went wrong while fetching complaints!")
+    }
+
+})
+
+const updateComplaintStatus = asyncHandler( async( req, res ) => {
+
+    const { complaintId } = req.params;
+    const { status } = req.body;
+
+    if( !complaintId ){
+        throw new ApiError(403, "Complaint ID required!")
+    }
+
+    console.log("Logged in user:", req.user);
+
+    const role = req.user?.role;
+
+    if( ![ "admin", "supervisor" ].includes(role) ){
+        throw new ApiError(400, " You are not authorizes to update complaint status. ")
+    }
+
+    if( !mongoose.Types.ObjectId.isValid(complaintId) ){
+        throw new ApiError(400, "Invalid compaint ID!")
+    }
+
+    const validStatuses = ["pending", "in-review", "resolved", "rejected"]; 
+    if( !status || !validStatuses.includes(status) ){
+        throw new ApiError(400, "Missing or invalid status!")
+    }
+
+    const updateComplaint = await Complaint.findByIdAndUpdate(
+        complaintId,
+        {
+            $set: {
+                status
+            }
+        },
+        { new : true }
+    ).populate( "submittedBy", "name email" )
+     .populate( "department", "name" )
+
+    if( !updateComplaint ){
+        throw new ApiError(404, "Complaint not found!")
+    }
+
+    const obj = updateComplaint.toObject()
+
+    if( obj.isAnonymous ){
+        delete obj.submittedBy
+    }
+
+    return res
+        .status(201)
+        .json(
+            new ApiResponse(
+                201,
+                obj,
+                "Status updated successfully"
+            )
+        )
 })
 
 export {
     createComplaint,
     getAllComplaint,
-    getComplaintById
+    getComplaintById,
+    getComplaintByUser,
+    updateComplaintStatus
 }

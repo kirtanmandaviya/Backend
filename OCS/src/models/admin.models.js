@@ -65,7 +65,8 @@ adminSchema.methods.generateAccessToken = function () {
     return jwt.sign({
         _id: this._id,
         name: this.userName,
-        email : this.email
+        email : this.email,
+        role: "admin"
     },
     process.env.ACCESS_TOKEN_SECRET,
     { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }

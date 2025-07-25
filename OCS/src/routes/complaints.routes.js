@@ -1,6 +1,8 @@
 import { createComplaint,
          getAllComplaint,
-         getComplaintById
+         getComplaintById,
+         getComplaintByUser,
+         updateComplaintStatus
  } from '../controllers/complaints.controllers.js'
 import { Router } from 'express'
 import { verifyJWT } from '../middlewares/auth.middlewares.js'
@@ -23,5 +25,7 @@ router.route('/create-complaint').post(
     createComplaint)
 router.route('/get-all-complaint').get(getAllComplaint)
 router.route('/get-complaintById/c/:complaintId').get(getComplaintById)
+router.route('/get-complaintByUserId/c/:userId').get(getComplaintByUser)
+router.route('/update-compalint-status/c/:complaintId').patch(updateComplaintStatus)
 
 export default router

@@ -13,19 +13,36 @@ export const verifyJWT = asyncHandler( async ( req, res, next ) => {
     }
 
     try {
-        const decodeToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET)
+        const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET)
+        const { _id, role } = decodedToken;
+        let user;
 
-        const user = await User.findById(decodeToken?._id).select("-password -refreshToken")
-        const supervisor = await Supervisor.findById(decodeToken?._id).select("-password -refreshToken")
-        const admin = await Admin.findById(decodeToken?._id).select("-password -refreshToken")
-
-        if (!user && !supervisor && !admin) {
-            throw new ApiError(401, "User doesn't exist");
+        if( role === "admin" ){
+            user = await Admin.findById(_id).select( "-password -refreshToken" )
+        }else if( role === "supervisor" ){
+            user = await Supervisor.findById(_id).select( "-password -refreshToken" )
+        }else if( role === "user" ){
+            user = await User.findById(_id).select( "-password -refreshToken" )
         }
 
-        req.user = user || supervisor || admin;
+        if ( !user ) {
+            throw new ApiError(401, "User not found");
+        }
 
-        next()
+         if (!user) {
+            throw new ApiError(401, "User not found");
+        }
+
+        req.user = {
+            _id: user._id,
+            role: role,
+            name: user.name || user.userName,
+            email: user.email
+        };
+
+
+        next();
+
     } catch (error) {
         throw new ApiError(401, error?.message || "Invalide access token")
     }
