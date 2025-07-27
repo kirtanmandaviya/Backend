@@ -9,10 +9,10 @@ import { uploadOnCloudinary, deleteFromCloudinary, cloudinary } from '../utils/c
 import mongoose from 'mongoose'
 
 
-// create Complaint,
-// get all Complaint,
-// get one Complaint,
-// get complaint by User,
+//create Complaint,
+//get all Complaint,
+//get one Complaint,
+//get complaint by User,
 //Update Complaint Status,
 //Assign Complaint to Supervisors,
 //Soft Delete Complaint,
@@ -71,13 +71,25 @@ const createComplaint = asyncHandler( async ( req, res ) => {
         }
     }
 
+    let parsedIsAnonymous;
+
+        if (typeof isAnonymous === "undefined") {
+            parsedIsAnonymous = false;
+        } else if (isAnonymous === "true") {
+            parsedIsAnonymous = true;
+        } else if (isAnonymous === "false") {
+            parsedIsAnonymous = false;
+        } else {
+        throw new ApiError(400, "isAnonymous must be true or false in form-data");
+        }
+
     try {
         const complaint = await Complaint.create(
             {
                 title,
                 description,
                 category,
-                isAnonymous: isAnonymous ?? false, 
+                isAnonymous: parsedIsAnonymous, 
                 image: {
                     url:image?.url,
                     public_id: image?.public_id
@@ -92,6 +104,8 @@ const createComplaint = asyncHandler( async ( req, res ) => {
             }
         )
 
+        console.log("Parsed isAnonymous:", parsedIsAnonymous);
+
         return res
             .status(201)
             .json(
@@ -103,6 +117,9 @@ const createComplaint = asyncHandler( async ( req, res ) => {
             )
     }
     catch (error) {
+
+         console.error("Complaint creation error:", error);
+
         if( video?.public_id ){
             await deleteFromCloudinary(video.public_id)
         }
@@ -309,10 +326,213 @@ const updateComplaintStatus = asyncHandler( async( req, res ) => {
         )
 })
 
+const assignComplaintToSupervisor = asyncHandler( async( req, res) => {
+
+    console.log("Authenticated user:", req.user)
+
+    const { complaintId } = req.params;
+    const { supervisorId } = req.body;
+
+    if( !complaintId ){
+        throw new ApiError(403, "Complaint ID is required!")
+    }
+
+    const role = req.user?.role;
+
+    if( role !== "admin" ){
+        throw new ApiError(403, "Only admins can assign complaints to supervisors.")
+    }
+
+    if( !mongoose.Types.ObjectId.isValid(complaintId) ){
+        throw new ApiError(400, "Invalid complaint ID!")
+    }
+
+    if( !supervisorId || !mongoose.Types.ObjectId.isValid(supervisorId) ){
+        throw new ApiError(400, "Invalid supervisor ID!")
+    }
+
+    const updateComplaint = await Complaint.findByIdAndUpdate(
+        complaintId,
+        {
+            $set:{
+                assignedToSupervisor:supervisorId
+            }
+        },
+        { new : true }
+    ).populate( "department", "name" )
+     .populate( "submittedBy", "name email" )
+     .populate( "assignedToSupervisor", " name email " )   
+     
+    if( !updateComplaint ){
+        throw new ApiError(404, "Complaint not found!")
+    }
+
+    const obj = updateComplaint.toObject();
+
+    if( obj.isAnonymous ){
+        delete obj.submittedBy
+    }
+
+    return res
+        .status(201)
+        .json(
+            new ApiResponse(
+                201,
+                obj,
+                "Complaint assigned to supervisor successfully"
+            )
+        )
+})
+
+const deleteComplaint = asyncHandler( async( req, res ) => {
+
+    const { complaintId } = req.params
+
+    if( !complaintId ){
+        throw new ApiError(403, "Complaint ID required!")
+    }
+
+    const complaint = await Complaint.findById(complaintId)
+
+    if( !complaint ){
+        throw new ApiError(404, "Complaint not found!")
+    }
+
+    if( complaint.submittedBy.toString() !== req.user._id.toString() ){
+        throw new ApiError(403, "You are not authorized to delete this complaint!");
+    }
+
+    await Complaint.findByIdAndDelete(complaintId)
+
+    return res
+        .status(201)
+        .json(
+            new ApiResponse(
+                201,
+                {},
+                "Complaint deleted successfully"
+            )
+        )
+
+})
+
+const anonymousComplaintsView = asyncHandler( async( req, res ) => {
+
+    const userId = req.user?._id;
+    const role = req.user?.role;
+
+    if( role !== "admin" ){
+       throw new ApiError(403, "Only admins can view anonymous complaints.")
+    }
+
+    if( !userId ){
+        throw new ApiError(403, "User ID required!")
+    }
+
+    const complaints = await Complaint.find( { isAnonymous: true } )
+
+    console.log("Anonymous complaints fetched:", complaints);
+
+    if( !complaints || complaints.length === 0 ){
+        throw new ApiError(404, "No anonymous complaints found!")
+    }
+
+    return res
+        .status(201)
+        .json(
+            new ApiResponse(
+                201,
+                complaints,
+                "Anonymous complaints fetched successfully"
+            )
+        )
+
+})
+
+const filterComplaint = asyncHandler( async( req, res ) => {
+
+    const role = req.user?.role;
+    const supervisorId = req.user?._id
+
+    if( role !== "supervisor" ){
+        throw new ApiError(400, "Access denied. Only supervisors can view this.")
+    }
+
+    if( !supervisorId ){
+        throw new ApiError(400, "Supervisor ID required!")
+    }
+
+    const {
+        status,
+        department,
+        category,
+        isAnonymous,
+        startDate,
+        endDate
+    } = req.query
+
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = ( page - 1 ) * limit 
+
+    const query = {
+        assignedToSupervisor: { $in: [supervisorId] },
+        isDeleted: false
+    }
+
+    if( status ) query.status = status.toLowerCase();
+    if( department ) query.department = department.toLowerCase();
+    if( category ) query.category = category.toLowerCase();
+    if( isAnonymous !== undefined ) query.isAnonymous = isAnonymous === "true"
+
+    if( startDate || endDate ){
+        query.createdAt = {};
+        if( startDate ) query.createdAt.$gte = new Date(startDate);
+        if( endDate ) query.createdAt.$lte = new Date(endDate)
+    }    
+
+    console.log("Filter query:", query);
+
+    const complaint = await Complaint.find(query)
+        .populate("submittedBy", "name email role")
+        .sort( { createdAt: -1 } )
+        .limit(limit)
+        .skip(skip)
+    
+    if( !complaint ){
+        throw new ApiError(404, "Complaint not found!")
+    }
+
+    const sanitized = complaint.map(c => {
+        const obj = c.toObject()
+        if( obj.isAnonymous ){ 
+            delete obj.submittedBy
+        }
+
+        return obj;
+    })
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                sanitized,
+                "Complaint fetched successfully"
+            )
+        )
+
+})
+
 export {
     createComplaint,
     getAllComplaint,
     getComplaintById,
     getComplaintByUser,
-    updateComplaintStatus
+    updateComplaintStatus,
+    assignComplaintToSupervisor,
+    deleteComplaint,
+    anonymousComplaintsView,
+    filterComplaint
 }

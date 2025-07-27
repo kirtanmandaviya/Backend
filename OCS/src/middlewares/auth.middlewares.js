@@ -25,21 +25,16 @@ export const verifyJWT = asyncHandler( async ( req, res, next ) => {
             user = await User.findById(_id).select( "-password -refreshToken" )
         }
 
-        if ( !user ) {
-            throw new ApiError(401, "User not found");
-        }
-
          if (!user) {
             throw new ApiError(401, "User not found");
         }
 
         req.user = {
             _id: user._id,
-            role: role,
+            role,
             name: user.name || user.userName,
             email: user.email
         };
-
 
         next();
 
