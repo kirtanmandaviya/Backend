@@ -6,7 +6,8 @@ import { createComplaint,
          assignComplaintToSupervisor,
          deleteComplaint,
          anonymousComplaintsView,
-         filterComplaint
+         filterComplaint,
+         getAssignedSupervisor
  } from '../controllers/complaints.controllers.js'
 import { Router } from 'express'
 import { verifyJWT } from '../middlewares/auth.middlewares.js'
@@ -35,5 +36,6 @@ router.route('/assign-complaint/c/:complaintId').patch(assignComplaintToSupervis
 router.route("/delete-complaint/c/:complaintId").delete(deleteComplaint)
 router.route("/get-anonymous-complaints").get(anonymousComplaintsView)
 router.route("/filter-complaint").get(filterComplaint)
+router.route("/get-assign-supervisor").get(getAssignedSupervisor)
 
 export default router

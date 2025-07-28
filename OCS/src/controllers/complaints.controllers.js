@@ -2,24 +2,9 @@ import { Complaint } from '../models/complaints.models.js'
 import { asyncHandler } from '../utils/asyncHandler.js'
 import { ApiError } from '../utils/ApiError.js'
 import { ApiResponse } from '../utils/ApiResponse.js'
-import { Supervisor } from '../models/supervisor.models.js'
-import { Admin } from '../models/admin.models.js'
-import { User } from '../models/user.models.js'
 import { uploadOnCloudinary, deleteFromCloudinary, cloudinary } from '../utils/cloudinary.js'
 import mongoose from 'mongoose'
-
-
-//create Complaint,
-//get all Complaint,
-//get one Complaint,
-//get complaint by User,
-//Update Complaint Status,
-//Assign Complaint to Supervisors,
-//Soft Delete Complaint,
-//Anonymous Complaints View (for admins),
-//Filter Complaints (Supervisor Dashboard)
-//getAssignedSupervisors 
-
+ 
 
 const createComplaint = asyncHandler( async ( req, res ) => {
 
@@ -525,6 +510,102 @@ const filterComplaint = asyncHandler( async( req, res ) => {
 
 })
 
+const getAssignedSupervisor = asyncHandler( async( req, res ) => {
+
+    const role = req.user?.role;
+    const userId = req.user?._id;
+
+    if( role !== "admin" ){
+        throw new ApiError(403, "Access denied. Only admin can view this.")
+    }
+
+    if( !userId ){
+        throw new ApiError(403, "User ID not provided!")
+    }
+
+    const data = await Complaint.aggregate(
+        [
+            {
+                $match:{
+                    isDeleted: false,
+                    assignedToSupervisor: { $ne: null }
+                }
+            },
+            {
+                $unwind:"$assignedToSupervisor"
+            },
+            {
+                $group:{
+                    _id: "$assignedToSupervisor",
+                    complaints: { $push: "$$ROOT" }
+                }
+            },
+            {
+                $lookup:{
+                    from:"supervisors",
+                    localField: "_id",
+                    foreignField: "_id",
+                    as: "supervisor"
+                }
+            },
+            {
+                $unwind:"$supervisor"
+            },
+            {
+                $addFields:{
+                    complaints:{
+                        $map:{
+                            input: "$complaints",
+                            as:"comp",
+                            in:{
+                                $cond:[
+                                    { $eq: ["$$comp.isAnonymous", true] },
+                                    {
+                                        _id: "$$comp._id",
+                                        title: "$$comp.title",
+                                        description: "$$comp.description",
+                                        status: "$$comp.status",
+                                        isAnonymous: "$$comp.isAnonymous",
+                                        department: "$$comp.department",
+                                        createdAt: "$$comp.createdAt", 
+                                    },
+                                    "$$comp"
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                $project:{
+                    _id: 0,
+                    supervisor: {
+                        _id: "$supervisor._id",
+                        userName: "$supervisor.userName",
+                        email: "$supervisor.email",
+                        department: "$supervisor.department",
+                        status: "$supervisor.status"
+                    },
+                    complaints: 1
+                }
+            }
+        ]
+    )
+
+    console.log(data)
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                data,
+                "Supervisors with assigned complaints fetched."
+            )
+        )
+
+})
+
 export {
     createComplaint,
     getAllComplaint,
@@ -534,5 +615,6 @@ export {
     assignComplaintToSupervisor,
     deleteComplaint,
     anonymousComplaintsView,
-    filterComplaint
+    filterComplaint,
+    getAssignedSupervisor
 }

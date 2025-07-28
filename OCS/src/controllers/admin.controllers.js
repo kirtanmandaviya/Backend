@@ -32,9 +32,9 @@ const generateAccessAndRefreshToken =  async ( userId ) => {
 
 const registerUser = asyncHandler( async ( req, res ) => {
 
-    const { userName, fullName, email, password } = req.body
+    const { userName, fullName, email, password, roleType } = req.body
 
-    if( !userName && !fullName && !email && !password ){
+    if( !userName && !fullName && !email && !password && !roleType ){
         throw new ApiError(401, "All credintials required!")
     }
 
@@ -53,7 +53,8 @@ const registerUser = asyncHandler( async ( req, res ) => {
             fullName,
             userName: userName.toLowerCase(),
             email: email,
-            password
+            password,
+            roleType
         }
     )
 

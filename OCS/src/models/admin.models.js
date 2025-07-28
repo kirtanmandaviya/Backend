@@ -44,6 +44,12 @@ const adminSchema = new Schema (
         }],
         refreshToken : {
             type: String
+        },
+        roleType: {
+            type: String,
+            enum: ["main", "departmentAdmin"],
+            default: "departmentAdmin",
+            required: true
         }
     },
     { timestamps: true }
@@ -66,7 +72,8 @@ adminSchema.methods.generateAccessToken = function () {
         _id: this._id,
         name: this.userName,
         email : this.email,
-        role: "admin"
+        role: "admin",
+        roleType: this.roleType
     },
     process.env.ACCESS_TOKEN_SECRET,
     { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }

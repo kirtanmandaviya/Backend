@@ -31,6 +31,7 @@ export const verifyJWT = asyncHandler( async ( req, res, next ) => {
 
         req.user = {
             _id: user._id,
+            roleType: role === "admin" ? user.roleType : undefined,
             role,
             name: user.name || user.userName,
             email: user.email
