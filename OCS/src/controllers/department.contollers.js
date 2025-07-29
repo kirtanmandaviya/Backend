@@ -2,21 +2,8 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js'
 import { ApiResponse } from '../utils/ApiResponse.js'
 import { Department } from '../models/departments.models.js'
-
-// Create Department : Admin creates a new department and optionally assigns head supervisors/
-//                     admins.
-// Get All Departments : Fetch all departments with populated head supervisors and admins.
-// Get Single Department by ID: Get detailed info of one department with populated fields.
-// Update Department: Update department name or reassign head supervisors/admins.
-// Delete Department (Soft or Hard):  Remove a department from the system.
-// Assign Head Supervisor/Admin to Department: Add or replace headSupervisor or headAdmin         
-//                                            for an existing department.
-// Get Departments by Supervisor or Admin :Get departments where a user is headSupervisor or 
-//                                             headAdmin.
-// List All Supervisors/Admins by Department:Get headSupervisor and headAdmin users assigned to a 
-//                                             department.
-// get Head Supervisor via Department model
-// get Head admin 
+import mongoose from 'mongoose';
+ 
 
 const createDepartment = asyncHandler( async( req, res ) => {
 
@@ -220,11 +207,128 @@ const deleteDepartment = asyncHandler( async( req, res ) => {
         )
 })
 
+const getDepartmentByHeadAdmin = asyncHandler( async( req, res ) => {
+
+    const { role } = req.user;
+    const { headAdminId } = req.params;
+
+    if( role !== "admin" ){
+        throw new ApiError(403, "You have no authority to fetch data!")
+    }
+
+    if( !headAdminId ){
+        throw new ApiError(403, "Head admin ID required!")
+    }
+
+    if( !headAdminId || !mongoose.Types.ObjectId.isValid(headAdminId) ){
+        throw new ApiError(400, "Invalid headAdmin ID")
+    }
+
+    const department = await Department.find( { headAdmin: headAdminId } )
+        .populate(
+            {
+                path: "headAdmin",
+                select: "-password -refreshToken"
+            })
+        .populate(
+            {
+                path: "headSupervisor",
+                select:"-password -refreshToken"
+            })
+
+    if( !department ){
+        throw new ApiError(404, "Department not found!")
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                department,
+                "Department fetched successfully"
+            )
+        )
+
+})
+
+const getHeadSupervisor = asyncHandler( async( req, res ) => {
+
+    const { role } = req.user;
+    const { departmentId } = req.params;
+
+    if( role !== "admin" ){
+        throw new ApiError(403, "You have no authority to fetch data!")
+    }
+
+    if( !departmentId || !mongoose.Types.ObjectId.isValid(departmentId) ){
+        throw new ApiError(400, "Invalid or Missing department ID!")
+    }
+
+    const department = await Department.findById(departmentId)
+        .populate({
+            path: "headSupervisor",
+            select: "-password -refreshToken"
+        })
+        .select("-headAdmin")
+
+    if( !department ){
+        throw new ApiError(404, "Department not found!")
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                department,
+                "Head supervisor fetched successfully"
+            )
+        )
+})
+
+const getHeadAdmin = asyncHandler( async( req, res ) => {
+
+    const { role } = req.user;
+    const { departmentId } = req.params;
+
+    if( role !== "admin" ){
+        throw new ApiError(403, "You have no authority to fetch data!")
+    }
+
+    if( !departmentId || !mongoose.Types.ObjectId.isValid(departmentId) ){
+        throw new ApiError(400, "Invalid or Missing department ID!")
+    }
+
+    const department = await Department.findById(departmentId)
+        .populate({
+            path: "headAdmin",
+            select: "-password -refreshToken"
+        })
+        .select("-headSupervisor")
+
+    if( !department ){
+        throw new ApiError(404, "Department not found!")
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                department,
+                "Head admin fetched successfully"
+            )
+        )
+}) 
 
 export { 
     createDepartment,
     getAllDepartment,
     getDepartmentById,
     updateDepartment,
-    deleteDepartment
+    deleteDepartment,
+    getDepartmentByHeadAdmin,
+    getHeadSupervisor,
+    getHeadAdmin
 }

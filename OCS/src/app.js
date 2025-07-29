@@ -21,11 +21,13 @@ import supervisorRouter from './routes/supervisor.routes.js';
 import adminRouter from './routes/admin.routes.js';
 import complaintRouter from './routes/complaints.routes.js';
 import departmentRouter from './routes/department.routes.js';
+import notificationRouter from './routes/notification.routes.js';
 
 app.use("/api/o1/user", userRouter);
 app.use("/api/o1/supervisor", supervisorRouter);
 app.use("/api/o1/admin", adminRouter); 
 app.use("/api/o1/complaint", complaintRouter);
 app.use("/api/o1/department", departmentRouter);
+app.use("/api/o1/notification", notificationRouter);
 
 export { app }

@@ -8,11 +8,11 @@ import mongoose, { Schema } from "mongoose";
 
 const notificationSchema = new Schema(
     {
-        userId:[{
+        userId:{
             type:mongoose.Types.ObjectId,
             ref:"User",
             required: true,
-        }],
+        },
         message: {
             type: String,
             required: true,
