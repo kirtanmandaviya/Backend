@@ -2,6 +2,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { Notification } from "../models/notification.models.js"
+import mongoose from "mongoose";
 
 // 1:Create Notification
 // Route: POST /notifications
@@ -83,6 +84,164 @@ const createNotification = asyncHandler( async( req, res ) => {
 
 })
 
+const getAllNotification = asyncHandler( async( req, res) => {
+
+    const userId = req.user?._id;
+    const page = parseInt(req.query?.page) || 1;
+    const limit = parseInt(req.query?.limit) || 10;
+    const skip = ( page - 1 ) * limit;
+
+    if( !userId ){
+        throw new ApiError(403, "User ID required!")
+    }
+
+    const notifications = await Notification.find({ userId })
+        .limit(limit)
+        .skip(skip)
+        .sort({ createdAt: -1 })
+
+    if( !notifications || notifications.length === 0 ){
+        throw new ApiError(404, "Notifcation not found!")
+    }
+
+    const totalNotifications = await Notification.countDocuments({ userId })
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                { notifications: notifications, totalNotifications },
+                "All notification fetched successfully"
+            )
+        )
+
+})
+
+const markNotificationAsRead = asyncHandler( async( req, res ) => {
+
+    const { notificationId } = req.params;
+    const userId = req.user?._id;
+
+    if( !notificationId ){
+        throw new ApiError(403, "Notification ID required!")
+    }
+
+    if( !userId ){
+        throw new ApiError(400, "User ID required!")
+    }
+
+    if( !mongoose.Types.ObjectId.isValid(notificationId) ){
+        throw new ApiError(400, "Invalid notification ID!")
+    }
+
+    const notification = await Notification.findById(notificationId);
+
+    if( !notification ){
+        throw new ApiError(404, "Notification not found!")
+    }
+
+    if( notification.userId.toString() !== userId.toString() ){
+        throw new ApiError(403, "You are not authorized to mark this notification as read")
+    }
+
+    if(notification.isRead){
+        return res
+            .status(200)
+            .json(
+                new ApiResponse
+                    (200, 
+                    notification, 
+                    "Notification was already marked as read"
+                )
+            );
+    }
+
+    notification.isRead = true;
+    await notification.save();
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                notification,
+                "Notification marked as read successfully"
+            )
+        )
+})
+
+const deleteNotification = asyncHandler( async( req, res ) => {
+
+    const { role } = req.user;
+    const { notificationId } = req.params;
+
+    if( role !== "admin" ){
+        throw new ApiError(403, "You have no authority to delete notification!")
+    }
+
+    if( !notificationId ){
+        throw new ApiError(403, "Notification ID required!")
+    }
+
+    if( !mongoose.Types.ObjectId.isValid(notificationId) ){
+        throw new ApiError(400, "Invalid notification ID!")
+    }
+
+    const notification = await Notification.findByIdAndDelete(notificationId)
+
+    if( !notification ){
+        throw new ApiError(404, "Notification not found!")
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                {},
+                "Notifcation deleted successfully"
+            )
+        )
+
+})
+
+const markAllNotificationAsRead = asyncHandler( async( req, res ) => {
+
+    const userId = req.user?._id;
+
+    if( !userId ){
+        throw new ApiError(400, "User ID required!")
+    }
+
+    const notification =  await Notification.updateMany(
+        { userId: req.user._id, isRead: false },
+        { $set: { isRead: true } }
+    )
+
+    if( !notification ){
+        throw new ApiError(404, "Notification not found!")
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                {
+                    matchedCount: notification.matchedCount || notification.n,
+                    modifiedCount: notification.modifiedCount || notification.nModified
+                },
+                "All unread notifications marked as read"
+            )
+        )
+
+})
+
 export {
-    createNotification
+    createNotification,
+    getAllNotification,
+    markNotificationAsRead,
+    deleteNotification,
+    markAllNotificationAsRead
 }

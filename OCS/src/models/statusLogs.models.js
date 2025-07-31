@@ -13,7 +13,8 @@ const statusLogsSchema = new Schema (
     {
         complaintId:{ 
             type: mongoose.Types.ObjectId,
-            ref: "Complaint"
+            ref: "Complaint",
+            required: true
         },
         changedBy: {
             type: mongoose.Types.ObjectId,
@@ -21,22 +22,18 @@ const statusLogsSchema = new Schema (
         },
         oldStatus: {
             type: String,
-            enum: ["pending", "in-review", "resolved", "rejected"],
+            enum: ["pending", "in_review", "resolved", "rejected"],
             required: true,
             trim: true,
             lowercase: true
         },
         newStatus: {
             type: String,
-            enum: ["pending", "in-review", "resolved", "rejected"],
+            enum: ["pending", "in_review", "resolved", "rejected"],
             required: true,
             trim: true,
             lowercase: true
         },
-        changedAt: {
-            type: Date,
-            required: true
-        }
     },
     { timestamps: true }
 )

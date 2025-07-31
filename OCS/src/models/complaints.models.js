@@ -41,7 +41,7 @@ const complaintSchema = new Schema(
         },
         status: {
             type: String,
-            enum: ["pending", "in-review", "resolved", "rejected"],
+            enum: ["pending", "in_review", "resolved", "rejected"],
             default: "pending",
             lowercase: true,
             trim : true
