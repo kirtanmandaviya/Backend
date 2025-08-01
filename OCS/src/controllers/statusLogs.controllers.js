@@ -5,6 +5,7 @@ import { ApiResponse } from '../utils/ApiResponse.js';
 import { Complaint } from '../models/complaints.models.js';
 import { Department } from '../models/departments.models.js';
 import { User } from '../models/user.models.js';
+import { Notification } from '../models/notification.models.js';
 import mongoose from "mongoose";
 
 
@@ -24,7 +25,7 @@ const VALID_STATUS_TRANSITIONS = {
 const createStatusLog = asyncHandler( async( req, res ) => {
 
     const { role, _id:userId } = req.user;
-    const { complaintId = [], oldStatus, newStatus } = req.body;
+    const { complaintId , oldStatus, newStatus } = req.body;
 
     if( role !== "admin" && role !== "supervisor" ){
         throw new ApiError(403, "You have no authority to create status log!")
@@ -60,6 +61,11 @@ const createStatusLog = asyncHandler( async( req, res ) => {
         throw new ApiError(403, "Something went wrong while creating status log!")
     }
 
+    await Notification.create({
+        userId: complaint.submittedBy,
+        message: `The status of your complaint has been updated to '${newStatus}'`
+    });
+
     return res
         .status(201)
         .json(
@@ -71,6 +77,8 @@ const createStatusLog = asyncHandler( async( req, res ) => {
         )
 
 })
+
+
 
 // 2. Get All StatusLogs for a Complaint
 // Purpose: View full status history for a specific complaint.
@@ -89,14 +97,15 @@ const getAllStatusLogsForComplaint = asyncHandler( async( req, res ) => {
         throw new ApiError(400, "Complaint ID required!")
     }
 
+    if (!mongoose.Types.ObjectId.isValid(complaintId)) {
+        throw new ApiError(400, "Invalid Complaint ID format.");
+    }
+
     const complaint = await Complaint.findById(complaintId);
 
     if( !complaint ){
         throw new ApiError(404, "Complaint not found!")
     }
-
-    console.log("complaint.submittedBy:", complaint.submittedBy);
-    console.log("req.user.userId:", userId);
 
     const isOwner = complaint.submittedBy?.toString() === userId.toString();
     const supervisorIds = (complaint.assignedToSupervisor || [])
@@ -112,7 +121,9 @@ const getAllStatusLogsForComplaint = asyncHandler( async( req, res ) => {
         throw new ApiError(403, "You are not authorized to view status logs for this complaint.")
     }
 
-    const statusLogs = await StatusLog.find( { complaintId } ).sort({ createdAt: -1 })
+    const statusLogs = await StatusLog.find( { complaintId } )
+        .populate('changedBy', 'fullName email')
+        .sort({ createdAt: -1 })
 
     return res
         .status(200)
@@ -124,6 +135,7 @@ const getAllStatusLogsForComplaint = asyncHandler( async( req, res ) => {
             )
         )
 })
+
 
 
 // 3. Get All StatusLogs Changed By a Specific User
@@ -231,6 +243,8 @@ const getStatusLogsChangedByUser = asyncHandler( async( req, res ) => {
 
 })
 
+
+
 // 4. Get StatusLogs by Date Range (optional, for reporting)
 // Purpose: Analyze complaints status changes over time.
 // Who can use:
@@ -240,6 +254,27 @@ const getStatusLogsChangedByUser = asyncHandler( async( req, res ) => {
 // who can't use:
 //              User
 //              Supervisor (or limited view only)
+
+const getStatusLogsByDate = asyncHandler( async( req, res ) => {
+
+    const { role, departmentId } = req.user;
+    const { startDate, endDate } = req.query;
+
+    if( role === "user"){
+        throw new ApiError(403, "Access denied!")
+    }
+
+    const query = {}
+
+    if( startDate || endDate ){
+        query.createdAt = {};
+        if( startDate ) query.createdAt.$gte = new Date(startDate);
+        if( endDate ) query.createdAt.$lte = new Date(endDate)
+    }
+
+    
+
+})
 
 export {
     createStatusLog,

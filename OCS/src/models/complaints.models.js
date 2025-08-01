@@ -59,10 +59,9 @@ const complaintSchema = new Schema(
             public_id: { type: String }
         },
         department: {
-            type: String,
+            type: Schema.Types.ObjectId,
             required: true,
-            lowercase: true,
-            trim: true
+            ref: "Department"
         },
         assignedToSupervisor:[{
             type: Schema.Types.ObjectId,

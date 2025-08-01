@@ -1,4 +1,6 @@
 import { Admin } from '../models/admin.models.js';
+import { User } from '../models/user.models.js';
+import { Supervisor } from '../models/supervisor.models.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -34,25 +36,26 @@ const registerUser = asyncHandler( async ( req, res ) => {
 
     const { userName, fullName, email, password, roleType } = req.body
 
-    if( !userName && !fullName && !email && !password && !roleType ){
+    if( !userName || !fullName || !email || !password || !roleType ){
         throw new ApiError(401, "All credintials required!")
     }
 
-    const existedUser = await Admin.findOne(
-        {
-            $or: [ { email }, { userName } ]
-        }
-    )
+    const userExistsInSupervisor = await Supervisor.findOne({ $or: [{ email: email.toLowerCase() }, { userName: userName.toLowerCase() }] });
 
-    if( existedUser ){
-        throw new ApiError(403, "User already exist!")
+    const userExistsInUser = await User.findOne({ $or: [{ email: email.toLowerCase() }, { userName: userName.toLowerCase() }] });
+
+    const userExistsInAdmin = await Admin.findOne({ $or: [{ email: email.toLowerCase() }, { userName: userName.toLowerCase() }] });
+
+    if (userExistsInSupervisor || userExistsInUser || userExistsInAdmin) {
+        throw new ApiError(409, "User already exists");
     }
+
 
     const user = await Admin.create(
         {
             fullName,
             userName: userName.toLowerCase(),
-            email: email,
+            email: email.toLowerCase(),
             password,
             roleType
         }
@@ -83,15 +86,17 @@ const loginUser = asyncHandler( async( req, res ) => {
 
     const { userName, email, password } = req.body
 
-    if( !userName || !email || !password ){
+    if( ( !userName && !email ) || !password ){
         throw new ApiError(401, "All credintials required!")
     }
 
-    const user = await Admin.findOne(
-        {
-            $or:[ { email }, { userName } ]
-        }
-    )
+    const emailLower = email?.toLowerCase();
+    const userNameLower = userName?.toLowerCase();
+
+    const user = await User.findOne({
+        $or: [{ userName: userNameLower }, { email: emailLower }]
+    });
+
 
     if( !user ){
         throw new ApiError(404, "User not found!")
@@ -132,6 +137,10 @@ const loginUser = asyncHandler( async( req, res ) => {
 })
 
 const logoutUser = asyncHandler( async( req, res ) => {
+
+    if (!req.user || !req.user._id) {
+        throw new ApiError(401, "Unauthorized");
+    }
 
     await Admin.findByIdAndUpdate(
         req.user?._id,
@@ -188,6 +197,9 @@ const refreshAccesssToken = asyncHandler( async( req, res ) => {
   
         const { accessToken , refreshToken : newRefreshToken } = await generateAccessAndRefreshToken(user._id)
   
+        user.refreshToken = newRefreshToken;
+        await user.save();
+
         const options = {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production"
@@ -209,7 +221,7 @@ const refreshAccesssToken = asyncHandler( async( req, res ) => {
             )
       
   } catch (error) {
-    
+    throw new ApiError(401, "Invalid or expired refresh token!")
   }
 
 })
@@ -223,6 +235,10 @@ const updatePassword = asyncHandler( async( req, res ) => {
     }
 
     const user = await Admin.findById(req.user?._id)
+
+    if (!user) {
+        throw new ApiError(404, "User not found!");
+    }
 
     const isPasswordValid = await user.isPasswordCorrect(oldPassword)
 
@@ -252,15 +268,35 @@ const updateAccountDetails = asyncHandler( async( req, res ) => {
         throw new ApiError(403, "Credintials required!")
     }
 
+    if (userName) {
+        const existingUser = await Admin.findOne({
+            userName: userName.toLowerCase(),
+            _id: { $ne: req.user._id },
+        });
+        if (existingUser) {
+            throw new ApiError(409, "Username already taken");
+        }
+    }
+        
+    if (email) {
+        const existingEmail = await Admin.findOne({
+            email: email.toLowerCase(),
+            _id: { $ne: req.user._id },
+        });
+        if (existingEmail) {
+            throw new ApiError(409, "Email already taken");
+        }
+        }
+        
+        const updateFields = {};
+        if (fullName) updateFields.fullName = fullName;
+        if (userName) updateFields.userName = userName.toLowerCase();
+        if (email) updateFields.email = email.toLowerCase();
+        
+
     const user = await Admin.findByIdAndUpdate(
         req.user._id,
-        {
-            $set:{
-                fullName,
-                userName: userName.toLowerCase(),
-                email: email
-            }
-        },
+        { $set: updateFields },
         { new : true }
     ).select( "-password -refreshToken" )
 

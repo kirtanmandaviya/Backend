@@ -1,4 +1,5 @@
 import { Complaint } from '../models/complaints.models.js'
+import { Department } from '../models/departments.models.js'
 import { asyncHandler } from '../utils/asyncHandler.js'
 import { ApiError } from '../utils/ApiError.js'
 import { ApiResponse } from '../utils/ApiResponse.js'
@@ -12,12 +13,18 @@ const createComplaint = asyncHandler( async ( req, res ) => {
         title,
         description,
         category,
-        department,
+        department: departmentName,
         isAnonymous
     } = req.body
 
-    if( !title || !description || !category || !department ){
+    if( !title || !description || !category || !departmentName ){
         throw new ApiError(401, " All details are required! ")
+    }
+
+    const department = await Department.findOne({ name: departmentName.trim() });
+
+    if (!department) {
+        throw new ApiError(404, "Department not found");
     }
 
     const submittedBy = req.user?._id
@@ -79,7 +86,7 @@ const createComplaint = asyncHandler( async ( req, res ) => {
                     url:image?.url,
                     public_id: image?.public_id
                 },
-                department,
+                department: department._id,
                 video:{
                     url: video?.url,
                     public_id: video?.public_id
@@ -126,11 +133,16 @@ const getAllComplaint = asyncHandler( async ( req, res ) => {
         const limit = Number(req.query.limit) || 10;
         const skip = ( page - 1 ) * limit;
 
-        const filter = {
-            category,
-            department
-        };
+        const filter = {};
+        if (category) filter.category = category.toLowerCase();
 
+        if (department) {
+            const deptDoc = await Department.findOne({ name: department.trim().toLowerCase() });
+            if (!deptDoc) {
+                throw new ApiError(400, "Department not found");
+            }
+            filter.department = deptDoc._id;
+        }
        
 
         const complaints = await Complaint.find(filter)
@@ -467,9 +479,20 @@ const filterComplaint = asyncHandler( async( req, res ) => {
     }
 
     if( status ) query.status = status.toLowerCase();
-    if( department ) query.department = department.toLowerCase();
     if( category ) query.category = category.toLowerCase();
     if( isAnonymous !== undefined ) query.isAnonymous = isAnonymous === "true"
+    if (department) {
+        if (mongoose.Types.ObjectId.isValid(department)) {
+            query.department = department;
+        } else {
+                const deptDoc = await Department.findOne({ name: department.trim().toLowerCase() });
+                if (!deptDoc) {
+                throw new ApiError(400, "Department not found");
+            }
+            query.department = deptDoc._id;
+        }
+}
+
 
     if( startDate || endDate ){
         query.createdAt = {};

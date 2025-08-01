@@ -3,6 +3,8 @@ import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/user.models.js';
+import { Admin } from '../models/admin.models.js';
+import { Supervisor } from '../models/supervisor.models.js';
 
 const generateAccessAndRefreshToken = async ( userId ) => {
     try {
@@ -30,20 +32,26 @@ const registerUser = asyncHandler( async ( req, res ) => {
         throw new ApiError(400, "All fields are required!")
     }
 
-    const existedUser = await User.findOne({
-        $or: [{userName}, {email}]
-    })
+    const userExistsInSupervisor = await Supervisor.findOne({ $or: [{ email: email.toLowerCase() }, { userName: userName.toLowerCase() }] });
 
-    if(existedUser){
-        throw new ApiError(401, "User with email or username already exists")
+    const userExistsInUser = await User.findOne({ $or: [{ email: email.toLowerCase() }, { userName: userName.toLowerCase() }] });
+
+    const userExistsInAdmin = await Admin.findOne({ $or: [{ email: email.toLowerCase() }, { userName: userName.toLowerCase() }] });
+
+    if (userExistsInSupervisor || userExistsInUser || userExistsInAdmin) {
+        throw new ApiError(409, "User already exists");
     }
 
     const user = await User.create({
         fullName,
         userName: userName.toLowerCase(),
-        email,
+        email: email.toLowerCase(),
         password
     })
+
+    if(!user){
+        throw new ApiError(404, "Something went wrong while creating user!");
+    }
 
     const createdUser = await User.findById(user._id).select("-password -refreshToken")
 
@@ -65,13 +73,16 @@ const registerUser = asyncHandler( async ( req, res ) => {
 const loginUser = asyncHandler( async ( req, res ) => {
     const { email, userName, password } = req.body
 
-    if( !email || !userName || !password ){
+    if( ( !email && !userName ) || !password ){
         throw new ApiError(400, "All creditials required!")
     }
 
+    const emailLower = email?.toLowerCase();
+    const userNameLower = userName?.toLowerCase();
+
     const user = await User.findOne({
-        $or: [ { userName }, { email } ]
-    })
+        $or: [{ userName: userNameLower }, { email: emailLower }]
+    });
 
     if(!user){
         throw new ApiError(404, "User not found!")
@@ -110,7 +121,12 @@ const loginUser = asyncHandler( async ( req, res ) => {
 })
 
 const logoutUser = asyncHandler( async ( req, res ) => {
-    await User.findByIdAndUpdate(
+
+    if (!req.user || !req.user._id) {
+        throw new ApiError(401, "Unauthorized");
+    }
+
+    const user = await User.findByIdAndUpdate(
         req.user._id,
         {
             $set:{
@@ -119,6 +135,10 @@ const logoutUser = asyncHandler( async ( req, res ) => {
         },
         { new: true }
     )
+
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
 
     const options = {
         httpOnly: true,
@@ -132,7 +152,7 @@ const logoutUser = asyncHandler( async ( req, res ) => {
         .json( new ApiResponse( 
             200, 
             {}, 
-            "User logges out successfully"
+            "User logged out successfully"
         ))
 })
 
@@ -152,7 +172,7 @@ const refreshAccesssToken = asyncHandler( async ( req, res ) => {
         const user =  await User.findById(decodeToken?._id)
 
         if(!user){
-            throw new ApiError(401, "Refresh token is required!")
+            throw new ApiError(404, "User not found!")
         }
 
         console.log("incomingRefreshToken", incomingRefreshToken)
@@ -162,12 +182,15 @@ const refreshAccesssToken = asyncHandler( async ( req, res ) => {
             throw new ApiError(401, "Invalid refresh token!")
         }
 
+        const { accessToken, refreshToken: newRefreshToken } = await generateAccessAndRefreshToken(user._id)
+
+        user.refreshToken = newRefreshToken;
+        await user.save();
+
         const options = {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production"
         }
-
-        const { accessToken, refreshToken: newRefreshToken } = await generateAccessAndRefreshToken(user._id)
 
         return res
             .status(200)
@@ -193,10 +216,14 @@ const updatePassword = asyncHandler( async ( req, res ) => {
     const { oldPassword, newPassword } = req.body
 
     if(!oldPassword || !newPassword){
-        throw new ApiError(401, "Password is required!")
+        throw new ApiError(400, "Password is required!")
     }
 
     const user = await User.findById(req.user?._id)
+
+    if (!user) {
+        throw new ApiError(404, "User not found!");
+    }
 
     const isPasswordValid = await user.isPasswordCorrect(oldPassword)
 
@@ -235,18 +262,38 @@ const updateAccountDetails = asyncHandler( async ( req, res ) => {
     const { fullName, email, userName } = req.body
 
     if(!fullName && !userName && !email){
-        throw new ApiError(401, "Credntials required!")
+        throw new ApiError(401, "Credentials required!")
     }
+
+    if (userName) {
+        const existingUser = await User.findOne({
+            userName: userName.toLowerCase(),
+            _id: { $ne: req.user._id },
+        });
+        if (existingUser) {
+            throw new ApiError(409, "Username already taken");
+        }
+        }
+    
+    if (email) {
+        const existingEmail = await User.findOne({
+            email: email.toLowerCase(),
+            _id: { $ne: req.user._id },
+        });
+        if (existingEmail) {
+            throw new ApiError(409, "Email already taken");
+        }
+        }
+    
+        const updateFields = {};
+        if (fullName) updateFields.fullName = fullName;
+        if (userName) updateFields.userName = userName.toLowerCase();
+        if (email) updateFields.email = email.toLowerCase();
+    
 
     const user = await User.findByIdAndUpdate(
         req.user?._id,
-        {
-            $set:{
-                fullName,
-                email: email,
-                userName
-            } 
-        },
+        { $set: updateFields },
         { new: true }
     ).select(" -password -refreshToken")
 
@@ -260,7 +307,7 @@ const updateAccountDetails = asyncHandler( async ( req, res ) => {
             new ApiResponse(
                 200,
                 user,
-                "Credntials updated successfully"
+                "Credentials updated successfully"
             )
         )
 })

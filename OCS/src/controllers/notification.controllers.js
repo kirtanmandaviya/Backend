@@ -50,16 +50,16 @@ const createNotification = asyncHandler( async( req, res ) => {
         throw new ApiError(403, "You have no authority to create notification!")
     }
  
-    if( !userId || !message ){
+    if( !userId?.trim() || !message?.trim() ){
         throw new ApiError(400, "User ID or Meaasge are required!")
     }
  
-    const exsitedNotification = await Notification.findOne({ 
+    const existingNotification  = await Notification.findOne({ 
         userId,
         message: message.trim().toLowerCase()
     })
  
-    if( exsitedNotification ){
+    if( existingNotification  ){
         throw new ApiError(409, "This message was already sent to that user")
     }
  
@@ -101,7 +101,7 @@ const getAllNotification = asyncHandler( async( req, res) => {
         .sort({ createdAt: -1 })
 
     if( !notifications || notifications.length === 0 ){
-        throw new ApiError(404, "Notifcation not found!")
+        throw new ApiError(404, "Notification not found!")
     }
 
     const totalNotifications = await Notification.countDocuments({ userId })
@@ -124,7 +124,7 @@ const markNotificationAsRead = asyncHandler( async( req, res ) => {
     const userId = req.user?._id;
 
     if( !notificationId ){
-        throw new ApiError(403, "Notification ID required!")
+        throw new ApiError(400, "Notification ID required!")
     }
 
     if( !userId ){
@@ -173,12 +173,8 @@ const markNotificationAsRead = asyncHandler( async( req, res ) => {
 
 const deleteNotification = asyncHandler( async( req, res ) => {
 
-    const { role } = req.user;
+    const { role, _id:userId } = req.user;
     const { notificationId } = req.params;
-
-    if( role !== "admin" ){
-        throw new ApiError(403, "You have no authority to delete notification!")
-    }
 
     if( !notificationId ){
         throw new ApiError(403, "Notification ID required!")
@@ -188,11 +184,20 @@ const deleteNotification = asyncHandler( async( req, res ) => {
         throw new ApiError(400, "Invalid notification ID!")
     }
 
-    const notification = await Notification.findByIdAndDelete(notificationId)
+    const notification = await Notification.findById(notificationId)
 
     if( !notification ){
         throw new ApiError(404, "Notification not found!")
     }
+
+    const isOwner = notification.userId.toString() === userId.toString();
+    const isAdmin = role === "admin";
+
+    if (!isAdmin && !isOwner) {
+        throw new ApiError(403, "You are not authorized to delete this notification!");
+    }
+
+    await notification.deleteOne();
 
     return res
         .status(200)
@@ -219,22 +224,20 @@ const markAllNotificationAsRead = asyncHandler( async( req, res ) => {
         { $set: { isRead: true } }
     )
 
-    if( !notification ){
-        throw new ApiError(404, "Notification not found!")
+    const matched = result.matchedCount || result.n;
+    const modified = result.modifiedCount || result.nModified;
+
+    if (matched === 0) {
+        throw new ApiError(404, "No unread notifications found.");
     }
 
-    return res
-        .status(200)
-        .json(
-            new ApiResponse(
-                200,
-                {
-                    matchedCount: notification.matchedCount || notification.n,
-                    modifiedCount: notification.modifiedCount || notification.nModified
-                },
-                "All unread notifications marked as read"
-            )
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            { matchedCount: matched, modifiedCount: modified },
+            "All unread notifications marked as read"
         )
+    );
 
 })
 

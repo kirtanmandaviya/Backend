@@ -2,6 +2,8 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { Supervisor } from "../models/supervisor.models.js";
+import { User } from '../models/user.models.js';
+import { Admin } from "../models/admin.models.js";
 import jwt from "jsonwebtoken";
 
 const generateAccessAndRefreshToken =  async ( userId ) => {
@@ -35,14 +37,14 @@ const registerUser = asyncHandler( async ( req, res ) => {
         throw new ApiError(401, "All details required!")
     }
 
-    const existedUser = await Supervisor.findOne(
-        {
-            $or:[ { email }, { userName } ]
-        }
-    )
+    const userExistsInSupervisor = await Supervisor.findOne({ $or: [{ email: email.toLowerCase() }, { userName: userName.toLowerCase() }] });
 
-    if(existedUser){
-        throw new ApiError(401, "User already exists")
+    const userExistsInUser = await User.findOne({ $or: [{ email: email.toLowerCase() }, { userName: userName.toLowerCase() }] });
+
+    const userExistsInAdmin = await Admin.findOne({ $or: [{ email: email.toLowerCase() }, { userName: userName.toLowerCase() }] });
+
+    if (userExistsInSupervisor || userExistsInUser || userExistsInAdmin) {
+        throw new ApiError(409, "User already exists");
     }
 
     const user = await Supervisor.create(
@@ -50,7 +52,7 @@ const registerUser = asyncHandler( async ( req, res ) => {
             fullName,
             userName: userName.toLowerCase(),
             password,
-            email
+            email: email.toLowerCase()
         }
     )
 
@@ -79,17 +81,16 @@ const loginUser = asyncHandler(  async ( req, res ) => {
 
     const { email, userName, password } = req.body
 
-    if( !email || !userName || !password ){
+    if( ( !email && !userName ) || !password ){
         throw new ApiError(401, "Credntails required!")
     }
 
-    const user = await Supervisor.findOne(
-        {
-            $or: [
-                {userName}, {email}
-            ]
-        }
-    )
+    const emailLower = email?.toLowerCase();
+    const userNameLower = userName?.toLowerCase();
+
+    const user = await Supervisor.findOne({
+        $or: [{ userName: userNameLower }, { email: emailLower }]
+    });
 
     if( !user ){
         throw new ApiError(404, "User not found")
@@ -128,6 +129,10 @@ const loginUser = asyncHandler(  async ( req, res ) => {
 })
 
 const logoutUser = asyncHandler( async ( req, res ) => {
+
+    if (!req.user || !req.user._id) {
+        throw new ApiError(401, "Unauthorized");
+    }
 
     await Supervisor.findByIdAndUpdate(
         req.user._id,
@@ -187,6 +192,9 @@ const refreshAccesssToken = asyncHandler( async ( req, res ) => {
 
         const { accessToken, refreshToken: newRefreshToken } = await generateAccessAndRefreshToken(user._id)
 
+        user.refreshToken = newRefreshToken;
+        await user.save();
+
         const options = {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production"
@@ -218,15 +226,34 @@ const updateAccountDetails = asyncHandler( async ( req, res ) => {
         throw new ApiError(401, "Credintials not provided!")
     }
 
+    if (userName) {
+        const existingUser = await Supervisor.findOne({
+            userName: userName.toLowerCase(),
+            _id: { $ne: req.user._id },
+        });
+        if (existingUser) {
+        throw new ApiError(409, "Username already taken");
+        }
+    }
+
+    if (email) {
+        const existingEmail = await Supervisor.findOne({
+            email: email.toLowerCase(),
+            _id: { $ne: req.user._id },
+        });
+        if (existingEmail) {
+            throw new ApiError(409, "Email already taken");
+        }
+    }
+
+    const updateFields = {};
+    if (fullName) updateFields.fullName = fullName;
+    if (userName) updateFields.userName = userName.toLowerCase();
+    if (email) updateFields.email = email.toLowerCase();
+
     const user = await Supervisor.findByIdAndUpdate(
         req.user._id,
-        {
-            $set:{
-                fullName,
-                userName,
-                email: email
-            }
-        },
+        { $set: updateFields },
         { new : true }
     ).select( "-password -refreshToken -permissions" )
 
@@ -262,11 +289,15 @@ const updatePassword = asyncHandler( async ( req, res ) => {
 
     const { oldPassword, newPassword } = req.body
 
-    if( !oldPassword && !newPassword){
+    if( !oldPassword || !newPassword){
         throw new ApiError(401, "Credintials required!")
     }
 
     const user = await Supervisor.findById(req.user?._id)
+
+    if (!user) {
+        throw new ApiError(404, "User not found!");
+    }
 
     const isPasswordValid = await user.isPasswordCorrect(oldPassword)
     
@@ -283,7 +314,7 @@ const updatePassword = asyncHandler( async ( req, res ) => {
             new ApiResponse(
                 200,
                 {},
-                "Paswword updated successfully"
+                "Password updated successfully"
             )
         )
 })

@@ -26,12 +26,12 @@ const adminSchema = new Schema (
             trim: true
         },
         email: {
-                type: String,
-                required: true,
-                lowercase: true,
-                trim: true,
-                unique: true,
-                index: true
+            type: String,
+            required: true,
+            lowercase: true,
+            trim: true,
+            unique: true,
+            index: true
         },
         password: {
             type: String,

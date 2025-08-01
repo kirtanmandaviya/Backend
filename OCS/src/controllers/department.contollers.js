@@ -18,7 +18,9 @@ const createDepartment = asyncHandler( async( req, res ) => {
             throw new ApiError(400, "Department name is required and must be a string.")
         }
 
-        const existedDepartment = await Department.findOne({ name: name.toLowerCase().trim() })
+        const normalizedName = name.toLowerCase().trim();
+
+        const existedDepartment = await Department.findOne({ name: normalizedName })
 
         if( existedDepartment ){
             throw new ApiError( 400, "Department already exists!" )
@@ -26,7 +28,7 @@ const createDepartment = asyncHandler( async( req, res ) => {
 
         const department = await Department.create(
             {
-                name,
+                name:normalizedName,
                 headSupervisor,
                 headAdmin
             }
@@ -50,8 +52,6 @@ const createDepartment = asyncHandler( async( req, res ) => {
 
 const getAllDepartment = asyncHandler( async( req, res ) => {
 
-    try {
-
         const { role, roleType } = req.user
 
         if( role !== "admin" || roleType !== "main" ){
@@ -68,6 +68,10 @@ const getAllDepartment = asyncHandler( async( req, res ) => {
                 select: "-password -refreshToken"
             })
 
+        if( !departments ){
+            throw new ApiError(404, "Department not found!")
+        }
+
         return res
             .status(200)
             .json(
@@ -77,10 +81,6 @@ const getAllDepartment = asyncHandler( async( req, res ) => {
                     "All Departments fetched successfully"
                 )
             )
-
-    } catch (error) {
-        throw new ApiError(500, "Something went wrong while fetching departments.")
-    }
 
 })
 
@@ -236,7 +236,7 @@ const getDepartmentByHeadAdmin = asyncHandler( async( req, res ) => {
                 select:"-password -refreshToken"
             })
 
-    if( !department ){
+    if( !department || department.length === 0 ){
         throw new ApiError(404, "Department not found!")
     }
 
