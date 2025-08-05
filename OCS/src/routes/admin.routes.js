@@ -6,7 +6,8 @@ import { registerUser,
          refreshAccesssToken,
          updatePassword,
          updateAccountDetails,
-         getCurrentUser
+         getCurrentUser,
+         assignDepartmentAdmin
  } from '../controllers/admin.controllers.js'
 
 const router = Router()
@@ -18,5 +19,6 @@ router.route("/refresh-token").post(verifyJWT, refreshAccesssToken)
 router.route("/update-password").patch(verifyJWT, updatePassword)
 router.route("/update-details").patch(verifyJWT, updateAccountDetails)
 router.route("/get-user").get(verifyJWT, getCurrentUser)
+router.route("/assign-departmentAdmin").patch(verifyJWT,assignDepartmentAdmin)
 
 export default router

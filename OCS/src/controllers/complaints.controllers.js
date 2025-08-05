@@ -126,6 +126,8 @@ const createComplaint = asyncHandler( async ( req, res ) => {
 
 const getAllComplaint = asyncHandler( async ( req, res ) => {
 
+    //need changes: authentication
+
     try {
         
         const { department, category } = req.query;
@@ -182,6 +184,8 @@ const getAllComplaint = asyncHandler( async ( req, res ) => {
 
 const getComplaintById = asyncHandler( async( req, res) => {
 
+    // need changes : add authentication
+
     const { complaintId } = req.params
 
     if( !complaintId ){
@@ -219,7 +223,7 @@ const getComplaintById = asyncHandler( async( req, res) => {
 
 const getComplaintByUser = asyncHandler( async( req, res ) => {
     
-    const userId = req.user?._id;
+    const { userId } = req.params;
 
     if( !userId ){
         throw new ApiError(401, "User ID is required!")
@@ -265,67 +269,8 @@ const getComplaintByUser = asyncHandler( async( req, res ) => {
 
 })
 
-const updateComplaintStatus = asyncHandler( async( req, res ) => {
-
-    const { complaintId } = req.params;
-    const { status } = req.body;
-
-    if( !complaintId ){
-        throw new ApiError(403, "Complaint ID required!")
-    }
-
-    console.log("Logged in user:", req.user);
-
-    const role = req.user?.role;
-
-    if( ![ "admin", "supervisor" ].includes(role) ){
-        throw new ApiError(400, " You are not authorizes to update complaint status. ")
-    }
-
-    if( !mongoose.Types.ObjectId.isValid(complaintId) ){
-        throw new ApiError(400, "Invalid compaint ID!")
-    }
-
-    const validStatuses = ["pending", "in-review", "resolved", "rejected"]; 
-    if( !status || !validStatuses.includes(status) ){
-        throw new ApiError(400, "Missing or invalid status!")
-    }
-
-    const updateComplaint = await Complaint.findByIdAndUpdate(
-        complaintId,
-        {
-            $set: {
-                status
-            }
-        },
-        { new : true }
-    ).populate( "submittedBy", "name email" )
-     .populate( "department", "name" )
-
-    if( !updateComplaint ){
-        throw new ApiError(404, "Complaint not found!")
-    }
-
-    const obj = updateComplaint.toObject()
-
-    if( obj.isAnonymous ){
-        delete obj.submittedBy
-    }
-
-    return res
-        .status(201)
-        .json(
-            new ApiResponse(
-                201,
-                obj,
-                "Status updated successfully"
-            )
-        )
-})
 
 const assignComplaintToSupervisor = asyncHandler( async( req, res) => {
-
-    console.log("Authenticated user:", req.user)
 
     const { complaintId } = req.params;
     const { supervisorId } = req.body;
@@ -415,6 +360,8 @@ const deleteComplaint = asyncHandler( async( req, res ) => {
 
 const anonymousComplaintsView = asyncHandler( async( req, res ) => {
 
+    // add pagination
+
     const userId = req.user?._id;
     const role = req.user?.role;
 
@@ -446,94 +393,10 @@ const anonymousComplaintsView = asyncHandler( async( req, res ) => {
 
 })
 
-const filterComplaint = asyncHandler( async( req, res ) => {
-
-    const role = req.user?.role;
-    const supervisorId = req.user?._id
-
-    if( role !== "supervisor" ){
-        throw new ApiError(400, "Access denied. Only supervisors can view this.")
-    }
-
-    if( !supervisorId ){
-        throw new ApiError(400, "Supervisor ID required!")
-    }
-
-    const {
-        status,
-        department,
-        category,
-        isAnonymous,
-        startDate,
-        endDate
-    } = req.query
-
-
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = ( page - 1 ) * limit 
-
-    const query = {
-        assignedToSupervisor: { $in: [supervisorId] },
-        isDeleted: false
-    }
-
-    if( status ) query.status = status.toLowerCase();
-    if( category ) query.category = category.toLowerCase();
-    if( isAnonymous !== undefined ) query.isAnonymous = isAnonymous === "true"
-    if (department) {
-        if (mongoose.Types.ObjectId.isValid(department)) {
-            query.department = department;
-        } else {
-                const deptDoc = await Department.findOne({ name: department.trim().toLowerCase() });
-                if (!deptDoc) {
-                throw new ApiError(400, "Department not found");
-            }
-            query.department = deptDoc._id;
-        }
-}
-
-
-    if( startDate || endDate ){
-        query.createdAt = {};
-        if( startDate ) query.createdAt.$gte = new Date(startDate);
-        if( endDate ) query.createdAt.$lte = new Date(endDate)
-    }    
-
-    console.log("Filter query:", query);
-
-    const complaint = await Complaint.find(query)
-        .populate("submittedBy", "name email role")
-        .sort( { createdAt: -1 } )
-        .limit(limit)
-        .skip(skip)
-    
-    if( !complaint ){
-        throw new ApiError(404, "Complaint not found!")
-    }
-
-    const sanitized = complaint.map(c => {
-        const obj = c.toObject()
-        if( obj.isAnonymous ){ 
-            delete obj.submittedBy
-        }
-
-        return obj;
-    })
-
-    return res
-        .status(200)
-        .json(
-            new ApiResponse(
-                200,
-                sanitized,
-                "Complaint fetched successfully"
-            )
-        )
-
-})
 
 const getAssignedSupervisor = asyncHandler( async( req, res ) => {
+
+    // add pagination
 
     const role = req.user?.role;
     const userId = req.user?._id;
@@ -629,12 +492,102 @@ const getAssignedSupervisor = asyncHandler( async( req, res ) => {
 
 })
 
+const filterComplaint = asyncHandler( async( req, res ) => {
+
+    // add separate supervisor : only their department's complaint can filter
+    // attention : department ..
+
+    const role = req.user?.role;
+    const supervisorId = req.user?._id
+
+    if( role !== "supervisor" ){
+        throw new ApiError(400, "Access denied. Only supervisors can view this.")
+    }
+
+    if( !supervisorId ){
+        throw new ApiError(400, "Supervisor ID required!")
+    }
+
+    const {
+        status,
+        department,
+        category,
+        isAnonymous,
+        startDate,
+        endDate
+    } = req.query
+
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = ( page - 1 ) * limit 
+
+    const query = {
+        assignedToSupervisor: { $in: [supervisorId] },
+        isDeleted: false
+    }
+
+    if( status ) query.status = status.toLowerCase();
+    if( category ) query.category = category.toLowerCase();
+    if( isAnonymous !== undefined ) query.isAnonymous = isAnonymous === "true"
+    if (department) {
+        if (mongoose.Types.ObjectId.isValid(department)) {
+            query.department = department;
+        } else {
+                const deptDoc = await Department.findOne({ name: department.trim().toLowerCase() });
+                if (!deptDoc) {
+                throw new ApiError(400, "Department not found");
+            }
+            query.department = deptDoc._id;
+        }
+}
+
+
+    if( startDate || endDate ){
+        query.createdAt = {};
+        if( startDate ) query.createdAt.$gte = new Date(startDate);
+        if( endDate ) query.createdAt.$lte = new Date(endDate)
+    }    
+
+    console.log("Filter query:", query);
+
+    const complaint = await Complaint.find(query)
+        .populate("submittedBy", "name email role")
+        .sort( { createdAt: -1 } )
+        .limit(limit)
+        .skip(skip)
+    
+    if( !complaint ){
+        throw new ApiError(404, "Complaint not found!")
+    }
+
+    const sanitized = complaint.map(c => {
+        const obj = c.toObject()
+        if( obj.isAnonymous ){ 
+            delete obj.submittedBy
+        }
+
+        return obj;
+    })
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                sanitized,
+                "Complaint fetched successfully"
+            )
+        )
+
+})
+
+
 export {
     createComplaint,
     getAllComplaint,
     getComplaintById,
     getComplaintByUser,
-    updateComplaintStatus,
     assignComplaintToSupervisor,
     deleteComplaint,
     anonymousComplaintsView,

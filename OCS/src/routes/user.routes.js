@@ -2,7 +2,7 @@ import { Router } from "express";
 import { registerUser,
          loginUser,
          logoutUser,
-         refreshAccesssToken,
+         refreshAccessToken,
          updatePassword,
          getCurrentUser,
          updateAccountDetails
@@ -14,7 +14,7 @@ const router = Router()
 router.route("/register").post(registerUser)
 router.route("/loging").post(loginUser)
 router.route("/logout").post(verifyJWT, logoutUser)
-router.route("/refresh-token").post(refreshAccesssToken)
+router.route("/refresh-token").post(refreshAccessToken)
 router.route("/update-password").patch(verifyJWT, updatePassword)
 router.route("/get-user").get(verifyJWT, getCurrentUser)
 router.route("/update-account-details").patch(verifyJWT, updateAccountDetails)

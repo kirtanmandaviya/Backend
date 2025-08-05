@@ -17,8 +17,16 @@ const statusLogsSchema = new Schema (
             required: true
         },
         changedBy: {
-            type: mongoose.Types.ObjectId,
-            ref: "User"
+            user: { 
+                type: mongoose.Types.ObjectId, 
+                required: true,
+                refPath: 'changedBy.role' 
+            },
+            role: { 
+                type: String, 
+                enum: ['Admin', 'Supervisor', 'User'], 
+                required: true 
+            }
         },
         oldStatus: {
             type: String,

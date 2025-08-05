@@ -5,6 +5,8 @@ import { Supervisor } from "../models/supervisor.models.js";
 import { User } from '../models/user.models.js';
 import { Admin } from "../models/admin.models.js";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
+import { Department } from "../models/departments.models.js";
 
 const generateAccessAndRefreshToken =  async ( userId ) => {
 
@@ -31,9 +33,9 @@ const generateAccessAndRefreshToken =  async ( userId ) => {
 }
 
 const registerUser = asyncHandler( async ( req, res ) => {
-    const { userName, password, email, fullName } = req.body
+    const { userName, password, email, fullName, department } = req.body
 
-    if( !userName || !password || !email || !fullName ){
+    if( !userName || !password || !email || !fullName || !department ){
         throw new ApiError(401, "All details required!")
     }
 
@@ -47,18 +49,36 @@ const registerUser = asyncHandler( async ( req, res ) => {
         throw new ApiError(409, "User already exists");
     }
 
+    let foundDepartment;
+
+    if( mongoose.Types.ObjectId.isValid(department) ){
+        foundDepartment = await Department.findById(department)
+    } else {
+        foundDepartment = await Department.findOne( { name: department.toLowerCase() })
+    }
+
+    if( !foundDepartment ){
+        throw new ApiError(404, "Department not found!")
+    }
+
     const user = await Supervisor.create(
         {
             fullName,
             userName: userName.toLowerCase(),
             password,
-            email: email.toLowerCase()
+            email: email.toLowerCase(),
+            department: foundDepartment._id
         }
     )
 
     if(!user){
         throw new ApiError(404, "Something went wrong while creating user!");
     }
+
+     await Department.findByIdAndUpdate(
+        foundDepartment._id,
+        { $addToSet: { supervisor: user._id } }
+    );
 
     const createdUser = await Supervisor.findById(user._id).select( " -password -refreshToken -permissions" );
 
@@ -220,13 +240,14 @@ const refreshAccesssToken = asyncHandler( async ( req, res ) => {
 
 const updateAccountDetails = asyncHandler( async ( req, res ) => {
 
-    const { fullName, userName, email } = req.body;
+    const { fullName, userName, email, department } = req.body;
+    const currentUser = await Supervisor.findById(req.user?._id).populate("department")
 
-    if( !fullName && !userName && !email ){
+    if( !fullName && !userName && !email && !department){
         throw new ApiError(401, "Credintials not provided!")
     }
 
-    if (userName) {
+    if ( userName ) {
         const existingUser = await Supervisor.findOne({
             userName: userName.toLowerCase(),
             _id: { $ne: req.user._id },
@@ -236,20 +257,55 @@ const updateAccountDetails = asyncHandler( async ( req, res ) => {
         }
     }
 
-    if (email) {
+    if ( email ) {
         const existingEmail = await Supervisor.findOne({
             email: email.toLowerCase(),
             _id: { $ne: req.user._id },
         });
-        if (existingEmail) {
+        if ( existingEmail ) {
             throw new ApiError(409, "Email already taken");
         }
     }
 
+    let updateDepartmentId = null;
+
+    if( department ){
+        let foundDepartment;
+
+        if( mongoose.Types.ObjectId.isValid(department) ){
+            foundDepartment = await Department.findById(department)
+        } else {
+            foundDepartment = await Department.findOne( { name: department.toLowerCase() } )
+        }
+
+        if( !foundDepartment ){
+            throw new ApiError(404, "Department not found!")
+        }
+
+        if( currentUser.department && currentUser.department.name.toLowerCase() === foundDepartment.name.toLowerCase()  ){
+            updateDepartmentId = null
+        } else {
+            updateDepartmentId = foundDepartment._id;
+
+            if( currentUser.department ){
+                await Department.findByIdAndUpdate(
+                    currentUser.department._id,
+                    { $pull: { supervisor: currentUser._id } }
+                )
+            }
+
+            await Department.findByIdAndUpdate(
+                foundDepartment._id,
+                { $addToSet: { supervisor: currentUser._id } }
+            )
+        }
+    }
+
     const updateFields = {};
-    if (fullName) updateFields.fullName = fullName;
-    if (userName) updateFields.userName = userName.toLowerCase();
-    if (email) updateFields.email = email.toLowerCase();
+    if ( fullName ) updateFields.fullName = fullName;
+    if ( userName ) updateFields.userName = userName.toLowerCase();
+    if ( email ) updateFields.email = email.toLowerCase();
+    if( updateDepartmentId ) updateFields.department = updateDepartmentId
 
     const user = await Supervisor.findByIdAndUpdate(
         req.user._id,

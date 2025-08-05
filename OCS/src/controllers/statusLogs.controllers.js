@@ -24,15 +24,19 @@ const VALID_STATUS_TRANSITIONS = {
 
 const createStatusLog = asyncHandler( async( req, res ) => {
 
+    // need updation : supervisor can change status log only their department's complaint
+
     const { role, _id:userId } = req.user;
-    const { complaintId , oldStatus, newStatus } = req.body;
+    const { newStatus } = req.body;
+    const { complaintId } = req.params
+
 
     if( role !== "admin" && role !== "supervisor" ){
         throw new ApiError(403, "You have no authority to create status log!")
     }
 
-    if( !complaintId || !oldStatus || !newStatus){
-        throw new ApiError(400, "All credintials required!")
+    if( !newStatus ){
+        throw new ApiError(400, "New status required!")
     }
 
     const complaint = await Complaint.findById(complaintId).populate("submittedBy");
@@ -41,18 +45,24 @@ const createStatusLog = asyncHandler( async( req, res ) => {
         throw new ApiError(404, "Complaint not found!")
     }
 
+    const oldStatus = complaint.status;
+    const currentStatus = complaint.status;
     const validNextStatuses = VALID_STATUS_TRANSITIONS[oldStatus];
 
     if( !validNextStatuses || !validNextStatuses.includes(newStatus) ){
-        throw new ApiError(400,  `Invalid status transition from '${oldStatus}' to '${newStatus}'`)
+        throw new ApiError(400,  `Invalid status transition from '${currentStatus}' to '${newStatus}'`)
     }
+
 
     complaint.status = newStatus;
     await complaint.save();
 
     const statusLog = await StatusLog.create({
         complaintId,
-        changedBy: userId,
+        changedBy: {
+            user: userId,
+            role: role.charAt(0).toUpperCase() + role.slice(1).toLowerCase()
+        },
         oldStatus,
         newStatus
     })
@@ -62,7 +72,7 @@ const createStatusLog = asyncHandler( async( req, res ) => {
     }
 
     await Notification.create({
-        userId: complaint.submittedBy,
+        userId: complaint.submittedBy._id,
         message: `The status of your complaint has been updated to '${newStatus}'`
     });
 
@@ -114,15 +124,12 @@ const getAllStatusLogsForComplaint = asyncHandler( async( req, res ) => {
 
     const isAssignedSupervisor = supervisorIds.includes(userId.toString());
 
-    console.log("assignedToSupervisor raw:", complaint.assignedToSupervisor);
-
-
     if( !isOwner && !isAssignedSupervisor && role !== "admin" ){
         throw new ApiError(403, "You are not authorized to view status logs for this complaint.")
     }
 
     const statusLogs = await StatusLog.find( { complaintId } )
-        .populate('changedBy', 'fullName email')
+        .populate('changedBy.user', 'fullName email')
         .sort({ createdAt: -1 })
 
     return res
@@ -160,35 +167,23 @@ const getStatusLogsChangedByUser = asyncHandler( async( req, res ) => {
         throw new ApiError(400, "Invalid user ID!")
     }
 
+    const userIdObj = new mongoose.Types.ObjectId(userId) 
+
     if( roleType === "main" ){
-        const logs = await StatusLog.find({ changedBy: userId })
+        const logs = await StatusLog.find({ 'changedBy.user': userIdObj })
             .populate(
                 {
                     path: "complaintId",
                     populate: { path: "submittedBy", select: "_id fullName userName" }
                 }
-            );
-
-        const sanitizedLogs = logs.map(log => {
-
-            //creates a fresh, plain JS object without any Mongoose methods or getters/setters.
-            //This way you can safely delete properties without affecting the original object or running into immutability.
-
-            const logObj = JSON.parse(JSON.stringify(log)); 
-
-
-            if(logObj.complaintId?.isAnonymous){
-                delete logObj.complaintId.submittedBy
-            };
-            return logObj;
-        })
+            ).populate( 'changedBy.user', '_id userName fullName' )
 
         return res
             .status(200)
             .json(
                 new ApiResponse(
                     200,
-                    sanitizedLogs,
+                    logs,
                     "All logs fetched successfully"
                 )
             )
@@ -213,13 +208,13 @@ const getStatusLogsChangedByUser = asyncHandler( async( req, res ) => {
         throw new ApiError(403, "Access denied. User is not in your department!")
     }
 
-    const logs = await StatusLog.find({ changedBy: userId })
+    const logs = await StatusLog.find({ "changedBy.user": userIdObj })
         .populate(
             {
                 path: "complaintId",
                 populate: { path: "submittedBy", select: "_id fullName userName" }
             }
-        );
+        ).populate( 'changedBy.user', '_id userName fullName' )
 
         const sanitizedLogs = logs.map(log => {
             const logObj = JSON.parse(JSON.stringify(log));
@@ -257,11 +252,20 @@ const getStatusLogsChangedByUser = asyncHandler( async( req, res ) => {
 
 const getStatusLogsByDate = asyncHandler( async( req, res ) => {
 
-    const { role, departmentId } = req.user;
+    const { role, roleType, _id:currentUserId } = req.user;
     const { startDate, endDate } = req.query;
 
     if( role === "user"){
         throw new ApiError(403, "Access denied!")
+    }
+
+    if (startDate && isNaN(Date.parse(startDate))) {
+    throw new ApiError(400, "Invalid start date format.");
+    }
+ 
+
+    if (endDate && isNaN(Date.parse(endDate))) {
+    throw new ApiError(400, "Invalid end date format.");
     }
 
     const query = {}
@@ -272,12 +276,127 @@ const getStatusLogsByDate = asyncHandler( async( req, res ) => {
         if( endDate ) query.createdAt.$lte = new Date(endDate)
     }
 
-    
+
+    if( role === "admin" && roleType === "main" ){
+        const logs = await StatusLog.find(query)
+            .populate(
+                {
+                    path: "complaintId",
+                    populate: { path: "submittedBy", select: "_id fullName userName" }
+                }
+            )
+            .populate(
+                {
+                    path:"changedBy.user",
+                    select: "_id userName fullName"
+                }
+            )
+
+        return res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    logs,
+                    "All logs fetched successfully"
+                )
+            )
+    }
+    else if( role === "admin" && roleType === "departmentAdmin" ){
+        const departmentsManaged = await Department.find({ headAdmin: currentUserId }).select("_id")
+
+        const managedIds = departmentsManaged.map(dep => dep._id.toString());
+
+        const user = await User.find({ department: { $in:managedIds } }).select("_id")
+
+        const userIds = user.map(u => u._id)
+
+        const logs = await StatusLog.find({
+            ...query,
+            changedBy: { $in:  userIds  }
+        }).populate(
+            {
+                path: "complaintId",
+                populate: { path: "submittedBy", select: "_id userName fullName" }
+            }
+        ).populate(
+            {
+                path: "changedBy.user", select: "_id userName fullName"
+            }
+        )
+
+        const sanitizedLogs = logs.map(log => {
+            const logObj = JSON.parse(JSON.stringify(log))
+            if( logObj.complaintId?.isAnonymous ){
+                delete logObj.complaintId.submittedBy
+            };
+            return logObj
+        })
+
+        return res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    sanitizedLogs,
+                    "All logs fetched successfully"
+                )
+            )
+    }
+    else if( role === "supervisor" ){
+
+        const departments = await Department.find({ headSupervisor: currentUserId }).select("_id")
+
+        if( !departments.length ){
+            throw new ApiError(403, "Access denied. You are not a head supervisor.")
+        }
+
+        const complaints = await Complaint.find({ department: { $in: departments.map(dep => dep._id) } }).select("_id");
+        const complaintIds = complaints.map(c => c._id)
+
+        const logs = await StatusLog.find(
+            {
+                ...query,
+                complaintId: { $in: complaintIds  }
+            }
+        ).populate(
+            {
+                path: "complaintId",
+                populate: { path: "submittedBy", select: "_id userName fullName" }
+            }
+        ).populate(
+            {
+                path: "changedBy.user", select: "_id userName fullName"
+            }
+        )
+
+        const sanitizedLogs = logs.map(log => {
+            const logObj = JSON.parse(JSON.stringify(log))
+            if(logObj.complaintId?.isAnonymous){
+                delete logObj.complaintId.submittedBy
+            }
+            return logObj;
+        })
+
+        return res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    sanitizedLogs,
+                    "All log fetched successfully"
+                )
+            )
+    }
+    else {
+        throw new ApiError(403, "You do not have permission to access these logs.");
+    }
 
 })
 
 export {
     createStatusLog,
     getAllStatusLogsForComplaint,
-    getStatusLogsChangedByUser
+    getStatusLogsChangedByUser,
+    getStatusLogsByDate
 }

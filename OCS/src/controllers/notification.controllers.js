@@ -5,41 +5,9 @@ import { Notification } from "../models/notification.models.js"
 import mongoose from "mongoose";
 
 // 1:Create Notification
-// Route: POST /notifications
-// Who can use it:
-
-// ✅ Main Admin
-
-// ✅ Head Admin
-
-// ✅ Head Supervisor (optional)
-
-// 2: Get All Notifications for Logged-In User
-// Route: GET /notifications
-// Who can use it:
-
-// ✅ Any logged-in user (user, supervisor, admin)
-
-// 3. Mark a Notification as Read
-// Route: PATCH /notifications/:notificationId/read
-// Who can use it:
-
-// ✅ Only the notification recipient
-
-// 4:Delete a Notification
-// Route: DELETE /notifications/:notificationId
-// Who can use it:
-
-// ✅ Main Admin
-
-// ✅ (Optionally) allow users to delete their own notifications
-
-
-// 5: Mark All Notifications as Read
-// Route: PATCH /notifications/mark-all-read
-// Who can use it:
-
-// ✅ Any logged-in user (only affects their own notifications)
+// Who can use it:  Main Admin
+//                  Head Admin
+//                  Head Supervisor (optional)
 
 const createNotification = asyncHandler( async( req, res ) => {
 
@@ -84,6 +52,13 @@ const createNotification = asyncHandler( async( req, res ) => {
 
 })
 
+// 2: Get All Notifications for Logged-In User
+// Who can use it: Any logged-in user (user, supervisor, admin [ get only theri notifications ])
+
+
+
+// need proper authentication
+
 const getAllNotification = asyncHandler( async( req, res) => {
 
     const userId = req.user?._id;
@@ -117,6 +92,9 @@ const getAllNotification = asyncHandler( async( req, res) => {
         )
 
 })
+
+// 3. Mark a Notification as Read
+// Who can use it: Only the notification recipient
 
 const markNotificationAsRead = asyncHandler( async( req, res ) => {
 
@@ -171,6 +149,11 @@ const markNotificationAsRead = asyncHandler( async( req, res ) => {
         )
 })
 
+
+// 4:Delete a Notification
+// Who can use it: Main Admin,
+//                 allow users to delete their own notifications
+
 const deleteNotification = asyncHandler( async( req, res ) => {
 
     const { role, _id:userId } = req.user;
@@ -211,6 +194,9 @@ const deleteNotification = asyncHandler( async( req, res ) => {
 
 })
 
+// 5: Mark All Notifications as Read
+// Who can use it: Any logged-in user (only affects their own notifications)
+
 const markAllNotificationAsRead = asyncHandler( async( req, res ) => {
 
     const userId = req.user?._id;
@@ -224,8 +210,8 @@ const markAllNotificationAsRead = asyncHandler( async( req, res ) => {
         { $set: { isRead: true } }
     )
 
-    const matched = result.matchedCount || result.n;
-    const modified = result.modifiedCount || result.nModified;
+    const matched = notification.matchedCount || notification.n;
+    const modified = notification.modifiedCount || notification.nModified;
 
     if (matched === 0) {
         throw new ApiError(404, "No unread notifications found.");

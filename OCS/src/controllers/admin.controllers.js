@@ -5,6 +5,8 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import jwt from 'jsonwebtoken';
+import { Department } from '../models/departments.models.js';
+import mongoose from 'mongoose';
 
 
 
@@ -50,6 +52,9 @@ const registerUser = asyncHandler( async ( req, res ) => {
         throw new ApiError(409, "User already exists");
     }
 
+    if (!["main", "departmentAdmin"].includes(roleType)) {
+    throw new ApiError(400, "Invalid roleType");
+    }
 
     const user = await Admin.create(
         {
@@ -93,7 +98,7 @@ const loginUser = asyncHandler( async( req, res ) => {
     const emailLower = email?.toLowerCase();
     const userNameLower = userName?.toLowerCase();
 
-    const user = await User.findOne({
+    const user = await Admin.findOne({
         $or: [{ userName: userNameLower }, { email: emailLower }]
     });
 
@@ -289,7 +294,7 @@ const updateAccountDetails = asyncHandler( async( req, res ) => {
         }
         
         const updateFields = {};
-        if (fullName) updateFields.fullName = fullName;
+        if (fullName) updateFields.fullName = fullName.toLowerCase();
         if (userName) updateFields.userName = userName.toLowerCase();
         if (email) updateFields.email = email.toLowerCase();
         
@@ -330,6 +335,66 @@ const getCurrentUser = asyncHandler( async( req, res ) => {
 
 })
 
+const assignDepartmentAdmin = asyncHandler( async ( req, res ) => {
+    
+    const { role, roleType } = req.user;
+    const { department, adminId } = req.body;
+
+    if( role !== "admin" || roleType !== "main" ){
+        throw new ApiError(403, "Access denied!")
+    }
+
+    if( !department || !adminId ){
+        throw new ApiError(400, "All credentials required!")
+    }
+
+    let foundDepartment;
+
+    if( mongoose.Types.ObjectId.isValid(department) ){
+        foundDepartment = await Department.findById(department)
+    } else {
+        foundDepartment = await Department.findOne( { name: department.toLowerCase() } )
+    }
+
+    if( !foundDepartment ){
+        throw new ApiError(404, "Department not found!")
+    }
+
+    const adminDoc  = await Admin.findOne( { _id: adminId, roleType: "departmentAdmin" } )
+    
+    if( !adminDoc ){
+        throw new ApiError(404, "Admin not found or not a department admin")
+    }
+
+    const existingAssignment  = await Department.findOne( { headAdmin: adminId } )
+
+    if( existingAssignment && existingAssignment._id.toString() !== foundDepartment._id.toString() ){
+        throw new ApiError(409, `Admin is already assigned as headAdmin to another department (${existingAssignment.name})`)
+    }
+
+    const assignAdmin = await Department.findByIdAndUpdate(
+        foundDepartment._id,
+        {
+            $set: { headAdmin : adminDoc._id }
+        },
+        { new: true }
+    )
+
+    if( !assignAdmin ){
+        throw new ApiError(403, "Something went wrong while assigning admin!")
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                assignAdmin,
+                "Admin assign successfully"
+            )
+        )
+})
+
 export {
     registerUser,
     loginUser,
@@ -337,5 +402,6 @@ export {
     refreshAccesssToken,
     updatePassword,
     updateAccountDetails,
-    getCurrentUser
+    getCurrentUser,
+    assignDepartmentAdmin
 }

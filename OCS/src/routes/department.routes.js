@@ -6,7 +6,7 @@ import { createDepartment,
          updateDepartment,
          deleteDepartment,
          getDepartmentByHeadAdmin,
-         getHeadSupervisor,
+         getSupervisor,
          getHeadAdmin
  } from '../controllers/department.contollers.js';
 
@@ -19,7 +19,7 @@ router.route("/get-departmentById/o/:departmentId").get(getDepartmentById);
 router.route("/update-department/o/:departmentId").patch(updateDepartment);
 router.route("/delete-department/o/:departmentId").delete(deleteDepartment);
 router.route("/get-departmentByHeadAdmin/o/:headAdminId").get(getDepartmentByHeadAdmin);
-router.route("/get-headSupervisor/o/:departmentId").get(getHeadSupervisor);
+router.route("/get-supervisor/o/:departmentId").get(getSupervisor);
 router.route("/get-headAdmin/o/:departmentId").get(getHeadAdmin);
 
 export default router;

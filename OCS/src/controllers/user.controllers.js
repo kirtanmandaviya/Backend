@@ -5,6 +5,8 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/user.models.js';
 import { Admin } from '../models/admin.models.js';
 import { Supervisor } from '../models/supervisor.models.js';
+import mongoose from 'mongoose';
+import { Department } from '../models/departments.models.js';
 
 const generateAccessAndRefreshToken = async ( userId ) => {
     try {
@@ -26,9 +28,9 @@ const generateAccessAndRefreshToken = async ( userId ) => {
 }
 
 const registerUser = asyncHandler( async ( req, res ) => {
-    const { userName, email, fullName, password } = req.body
+    const { userName, email, fullName, password, department } = req.body
 
-    if(!userName || !email || !fullName || !password){
+    if(!userName || !email || !fullName || !password || !department){
         throw new ApiError(400, "All fields are required!")
     }
 
@@ -42,16 +44,34 @@ const registerUser = asyncHandler( async ( req, res ) => {
         throw new ApiError(409, "User already exists");
     }
 
+    let foundDepartment;
+
+    if( mongoose.Types.ObjectId.isValid(department) ){
+        foundDepartment = await Department.findById(department)
+    } else {
+        foundDepartment = await Department.findOne( { name: department.toLowerCase() } )
+    }
+
+    if( !foundDepartment ){
+        throw new ApiError(404, "Department not found!")
+    }
+
     const user = await User.create({
         fullName,
         userName: userName.toLowerCase(),
         email: email.toLowerCase(),
-        password
+        password,
+        department: foundDepartment._id
     })
 
     if(!user){
         throw new ApiError(404, "Something went wrong while creating user!");
     }
+
+    await Department.findByIdAndUpdate(
+        foundDepartment._id,
+        { $addToSet : { user: user._id } }
+    )
 
     const createdUser = await User.findById(user._id).select("-password -refreshToken")
 
@@ -74,7 +94,7 @@ const loginUser = asyncHandler( async ( req, res ) => {
     const { email, userName, password } = req.body
 
     if( ( !email && !userName ) || !password ){
-        throw new ApiError(400, "All creditials required!")
+        throw new ApiError(400, "All credentials required!")
     }
 
     const emailLower = email?.toLowerCase();
@@ -96,7 +116,7 @@ const loginUser = asyncHandler( async ( req, res ) => {
 
     const { accessToken, refreshToken } = await generateAccessAndRefreshToken(user._id)
 
-    const loggedInUser = await User.findById(user._id).select( "-password -refreshtoken" );
+    const loggedInUser = await User.findById(user._id).select( "-password -refreshToken" );
 
     if(!loggedInUser){
         throw new ApiError(403, "User can't logged in!")
@@ -156,7 +176,7 @@ const logoutUser = asyncHandler( async ( req, res ) => {
         ))
 })
 
-const refreshAccesssToken = asyncHandler( async ( req, res ) => {
+const refreshAccessToken = asyncHandler( async ( req, res ) => {
     const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
     
     if(!incomingRefreshToken){
@@ -259,9 +279,10 @@ const getCurrentUser = asyncHandler( async ( req, res ) => {
 })
 
 const updateAccountDetails = asyncHandler( async ( req, res ) => {
-    const { fullName, email, userName } = req.body
+    const { fullName, email, userName, department } = req.body
+    const currentUser = await User.findById(req.user?._id).populate("department")
 
-    if(!fullName && !userName && !email){
+    if(!fullName && !userName && !email && !department){
         throw new ApiError(401, "Credentials required!")
     }
 
@@ -284,13 +305,47 @@ const updateAccountDetails = asyncHandler( async ( req, res ) => {
             throw new ApiError(409, "Email already taken");
         }
         }
-    
-        const updateFields = {};
-        if (fullName) updateFields.fullName = fullName;
-        if (userName) updateFields.userName = userName.toLowerCase();
-        if (email) updateFields.email = email.toLowerCase();
-    
+       
+        let updateDepartmentId = null;
 
+        if(department){
+            let foundDepartment;
+    
+            if( mongoose.Types.ObjectId.isValid(department._id) ){
+                foundDepartment = await Department.findById(department)
+            } else {
+            foundDepartment = await Department.findOne({ name: department.toLowerCase() })
+            }
+
+        if( !foundDepartment ){
+            throw new ApiError(404, "Department not found!")
+            }
+
+        
+        if( currentUser.department && currentUser.department?.name?.toLowerCase() === foundDepartment.name.toLowerCase() ){
+            updateDepartmentId = null
+        } else {
+            if( currentUser.department ){
+                await Department.findByIdAndUpdate(
+                    currentUser.department._id,
+                    { $pull : { user: currentUser._id } }
+                )
+            };
+
+            await Department.findByIdAndUpdate(
+                foundDepartment._id,
+                { $addToSet: { user: currentUser._id } }
+            )
+        }
+            updateDepartmentId = foundDepartment._id
+        }
+
+        const updateFields = {};
+        if ( fullName ) updateFields.fullName = fullName;
+        if ( userName ) updateFields.userName = userName.toLowerCase();
+        if ( email ) updateFields.email = email.toLowerCase();
+        if( updateDepartmentId ) updateFields.department = updateDepartmentId;
+    
     const user = await User.findByIdAndUpdate(
         req.user?._id,
         { $set: updateFields },
@@ -316,7 +371,7 @@ export {
     registerUser,
     loginUser,
     logoutUser,
-    refreshAccesssToken,
+    refreshAccessToken,
     updatePassword,
     getCurrentUser,
     updateAccountDetails

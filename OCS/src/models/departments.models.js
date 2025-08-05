@@ -16,13 +16,17 @@ const departmentsSchema = new Schema(
             trim: true,
             unique: true
         },
-        headSupervisor:[{
+        supervisor:[{
             type: mongoose.Types.ObjectId,
             ref:"Supervisor",
         }],
-        headAdmin: [{
+        headAdmin: {
             type: mongoose.Types.ObjectId,
             ref: "Admin"
+        },
+        user:[{
+            type: mongoose.Types.ObjectId,
+            ref:"User"
         }]
     },
     { timestamps: true }

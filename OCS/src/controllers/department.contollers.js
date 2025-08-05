@@ -7,7 +7,7 @@ import mongoose from 'mongoose';
 
 const createDepartment = asyncHandler( async( req, res ) => {
 
-        const { name, headSupervisor = [] , headAdmin = [] } = req.body
+        const { name, supervisor = [] , headAdmin  } = req.body
         const { role,  roleType } = req.user
 
         if( roleType !== "main" || role !== "admin" ){
@@ -29,7 +29,7 @@ const createDepartment = asyncHandler( async( req, res ) => {
         const department = await Department.create(
             {
                 name:normalizedName,
-                headSupervisor,
+                supervisor,
                 headAdmin
             }
         )
@@ -52,6 +52,8 @@ const createDepartment = asyncHandler( async( req, res ) => {
 
 const getAllDepartment = asyncHandler( async( req, res ) => {
 
+    // add pagination
+
         const { role, roleType } = req.user
 
         if( role !== "admin" || roleType !== "main" ){
@@ -60,15 +62,16 @@ const getAllDepartment = asyncHandler( async( req, res ) => {
         
         const departments = await Department.find({})
             .populate({
-                path: "headSupervisor",
+                path: "supervisor",
                 select: "-password -refreshToken"
             })
+            .populate( "headAdmin", "-password -refreshToken")
             .populate({
-                path: "headAdmin",
+                path: "user",
                 select: "-password -refreshToken"
             })
 
-        if( !departments ){
+        if( departments.length === 0 ){
             throw new ApiError(404, "Department not found!")
         }
 
@@ -97,14 +100,19 @@ const getDepartmentById = asyncHandler( async( req, res ) => {
         throw new ApiError(403, "Department ID required!")
     }
 
+    if (!mongoose.Types.ObjectId.isValid(departmentId)) {
+        throw new ApiError(400, "Invalid department ID");
+    }
+
     const department = await Department.findById(departmentId)
         .populate({
-            path : "headSupervisor",
+            path : "supervisor",
             select: "-password -refreshToken"
         })
+        .populate( "headAdmin", "-password -refreshToken")
         .populate({
-            path : "headAdmin",
-            select: "-password -refreshToken"
+            path: "user",
+            select: "-password, -refreshToken"
         })
 
     if( !department ){
@@ -125,32 +133,34 @@ const getDepartmentById = asyncHandler( async( req, res ) => {
 const updateDepartment = asyncHandler( async( req, res ) =>{
     
     const { role , roleType } = req.user;
-    const { name, headSupervisor, headAdmin } = req.body;
+    const { name, supervisor, headAdmin, user } = req.body;
     const { departmentId } = req.params;
 
     if( role !== "admin" || roleType !== "main" ){
         throw new ApiError(403, "You have no authorized to update data!")
     }
 
-    if( !name && !headSupervisor && !headAdmin ){
-        throw new ApiError(403, "Credintials required!")
+    if( !name && !supervisor && !headAdmin && !user){
+        throw new ApiError(403, "Credentials required!")
     }
 
     if( !departmentId ){
         throw new ApiError(403, "Department ID required!")
     }
 
+    const normalizedName = name ? name.toLowerCase().trim() : undefined;
+
+    const updateFields = {};
+        if (name) updateFields.name = normalizedName;
+        if (supervisor) updateFields.supervisor = supervisor;
+        if (headAdmin) updateFields.headAdmin = headAdmin;
+        if(user) updateFields.user = user;
+
     const department = await Department.findByIdAndUpdate(
         departmentId,
-        {
-            $set:{
-                name,
-                headSupervisor,
-                headAdmin
-            }
-        },
+        { $set: updateFields },
         { new: true }
-    )
+    );
 
     if( !department ){
         throw new ApiError(404, "Department not found!")
@@ -158,11 +168,12 @@ const updateDepartment = asyncHandler( async( req, res ) =>{
 
     const updatedDepartment = await Department.findById(departmentId)
         .populate({
-            path: "headSupervisor",
+            path: "supervisor",
             select: "-password -refreshToken"
         })
+        .populate( "headAdmin", "-password -refreshToken" )
         .populate({
-            path: "headAdmin",
+            path:"user",
             select: "-password -refreshToken"
         })
 
@@ -190,6 +201,10 @@ const deleteDepartment = asyncHandler( async( req, res ) => {
         throw new ApiError(403, "Department ID required!")
     }
 
+    if (!mongoose.Types.ObjectId.isValid(departmentId)) {
+        throw new ApiError(400, "Invalid department ID");
+    }
+
     const department = await Department.findByIdAndDelete(departmentId)
 
     if( !department ){
@@ -213,11 +228,7 @@ const getDepartmentByHeadAdmin = asyncHandler( async( req, res ) => {
     const { headAdminId } = req.params;
 
     if( role !== "admin" ){
-        throw new ApiError(403, "You have no authority to fetch data!")
-    }
-
-    if( !headAdminId ){
-        throw new ApiError(403, "Head admin ID required!")
+        throw new ApiError(403, "You are not authorized to fetch data!")
     }
 
     if( !headAdminId || !mongoose.Types.ObjectId.isValid(headAdminId) ){
@@ -225,16 +236,9 @@ const getDepartmentByHeadAdmin = asyncHandler( async( req, res ) => {
     }
 
     const department = await Department.find( { headAdmin: headAdminId } )
-        .populate(
-            {
-                path: "headAdmin",
-                select: "-password -refreshToken"
-            })
-        .populate(
-            {
-                path: "headSupervisor",
-                select:"-password -refreshToken"
-            })
+        .populate( "headAdmin", "-password -refreshToken" )
+        .populate( "supervisor", "-password -refreshToken")
+        .populate( "user", "-password -refreshToken" )
 
     if( !department || department.length === 0 ){
         throw new ApiError(404, "Department not found!")
@@ -252,25 +256,30 @@ const getDepartmentByHeadAdmin = asyncHandler( async( req, res ) => {
 
 })
 
-const getHeadSupervisor = asyncHandler( async( req, res ) => {
+const getSupervisor = asyncHandler( async( req, res ) => {
 
     const { role } = req.user;
     const { departmentId } = req.params;
 
     if( role !== "admin" ){
-        throw new ApiError(403, "You have no authority to fetch data!")
+        throw new ApiError(403, "You are not authorized to fetch data!")
     }
 
     if( !departmentId || !mongoose.Types.ObjectId.isValid(departmentId) ){
         throw new ApiError(400, "Invalid or Missing department ID!")
     }
 
+    if (!mongoose.Types.ObjectId.isValid(departmentId)) {
+        throw new ApiError(400, "Invalid department ID");
+    }
+
     const department = await Department.findById(departmentId)
         .populate({
-            path: "headSupervisor",
+            path: "supervisor",
             select: "-password -refreshToken"
         })
         .select("-headAdmin")
+        .select("-user")
 
     if( !department ){
         throw new ApiError(404, "Department not found!")
@@ -282,7 +291,7 @@ const getHeadSupervisor = asyncHandler( async( req, res ) => {
             new ApiResponse(
                 200,
                 department,
-                "Head supervisor fetched successfully"
+                "Supervisor fetched successfully"
             )
         )
 })
@@ -293,7 +302,7 @@ const getHeadAdmin = asyncHandler( async( req, res ) => {
     const { departmentId } = req.params;
 
     if( role !== "admin" ){
-        throw new ApiError(403, "You have no authority to fetch data!")
+        throw new ApiError(403, "You are not authorized to fetch data!")
     }
 
     if( !departmentId || !mongoose.Types.ObjectId.isValid(departmentId) ){
@@ -301,11 +310,9 @@ const getHeadAdmin = asyncHandler( async( req, res ) => {
     }
 
     const department = await Department.findById(departmentId)
-        .populate({
-            path: "headAdmin",
-            select: "-password -refreshToken"
-        })
-        .select("-headSupervisor")
+        .populate( "headAdmin", "-password -refreshToken" )
+        .select("-supervisor")
+        .select("-user")
 
     if( !department ){
         throw new ApiError(404, "Department not found!")
@@ -329,6 +336,6 @@ export {
     updateDepartment,
     deleteDepartment,
     getDepartmentByHeadAdmin,
-    getHeadSupervisor,
+    getSupervisor,
     getHeadAdmin
 }
